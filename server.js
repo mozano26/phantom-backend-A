@@ -320,11 +320,30 @@ async function launchProfileLogin(profileId) {
           } catch { /* try next selector */ }
         }
 
-        // Submit
-        const submitSelectors = ['button[type="submit"]', 'input[type="submit"]', 'button:has-text("Sign in")', 'button:has-text("Log in")', 'button:has-text("Login")'];
+        // Submit — only click VISIBLE buttons (sites often have hidden legacy submit
+        // inputs in the DOM that match a selector but can never be clicked, causing a hang)
+        const submitSelectors = ['button[type="submit"]', 'button[name="login"]', 'input[type="submit"]', 'button:has-text("Sign in")', 'button:has-text("Log in")', 'button:has-text("Login")'];
+        let clicked = false;
         for (const sel of submitSelectors) {
-          const el = page.locator(sel).first();
-          if (await el.count() > 0) { await el.click(); break; }
+          const els = await page.locator(sel).all();
+          for (const el of els) {
+            try {
+              if (await el.isVisible()) {
+                await el.click({ timeout: 4000 });
+                clicked = true;
+                logEvent('info', `Profile "${profile.name}" — clicked submit button: ${sel}`);
+                break;
+              }
+            } catch { /* not clickable, try next */ }
+          }
+          if (clicked) break;
+        }
+        // Fallback: press Enter on the password field — submits most login forms
+        if (!clicked) {
+          logEvent('info', `Profile "${profile.name}" — no visible submit button found, pressing Enter instead`);
+          try {
+            await page.locator('input[type="password"]').first().press('Enter');
+          } catch { /* ignore */ }
         }
 
         await page.waitForTimeout(1000);
@@ -336,8 +355,16 @@ async function launchProfileLogin(profileId) {
             const code = authenticator.generate(profile.totpSecret);
             logEvent('info', `Profile "${profile.name}" — entering TOTP code: ${code}`);
             await totpInput.fill(code);
-            const verifyBtn = page.locator('button[type="submit"], button:has-text("Verify"), button:has-text("Continue")').first();
-            if (await verifyBtn.count() > 0) await verifyBtn.click();
+            const verifySelectors = ['button[type="submit"]', 'button:has-text("Verify")', 'button:has-text("Continue")'];
+            let verifyClicked = false;
+            for (const sel of verifySelectors) {
+              const els = await page.locator(sel).all();
+              for (const el of els) {
+                try { if (await el.isVisible()) { await el.click({ timeout: 4000 }); verifyClicked = true; break; } } catch {}
+              }
+              if (verifyClicked) break;
+            }
+            if (!verifyClicked) { try { await totpInput.press('Enter'); } catch {} }
             await page.waitForTimeout(1000);
           }
         }
