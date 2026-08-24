@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Phantom — Antidetect</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <style>
+    :root {
+      --bg: #0a0a0f; --surface: #111118; --card: #16161f; --border: #1e1e2e;
+      --accent: #7c3aed; --accent2: #a855f7; --green: #22c55e; --red: #ef4444;
+      --yellow: #eab308; --blue: #3b82f6; --text: #e2e8f0; --muted: #64748b;
+      --font: 'Segoe UI', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; display: flex; flex-direction: column; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .logo { display: flex; align-items: center; gap: 10px; font-size: 1.2rem; font-weight: 700; }
+    .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 8px; display: grid; place-items: center; font-size: 1rem; }
+    .status-bar { display: flex; gap: 14px; align-items: center; font-size: .78rem; color: var(--muted); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 5px; box-shadow: 0 0 6px var(--green); }
+    .layout { display: flex; flex: 1; }
+    .sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); padding: 16px 0; display: flex; flex-direction: column; gap: 2px; }
+    .sidebar-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; font-size: .9rem; border-left: 3px solid transparent; transition: all .15s; color: var(--muted); }
+    .sidebar-item:hover { background: var(--card); color: var(--text); }
+    .sidebar-item.active { border-left-color: var(--accent); background: var(--card); color: var(--text); }
+    .main { flex: 1; padding: 24px; overflow-y: auto; }
+    .tab { display: none; } .tab.active { display: block; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+    .section-title { font-size: 1.15rem; font-weight: 600; } .section-sub { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+    .btn { padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: .85rem; font-weight: 600; transition: all .15s; }
+    .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent2); }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); } .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+    .btn-danger { background: transparent; color: var(--red); border: 1px solid #ef444430; } .btn-danger:hover { background: #ef444415; }
+    .btn-success { background: #22c55e20; color: var(--green); border: 1px solid #22c55e30; } .btn-success:hover { background: #22c55e35; }
+    .btn-blue { background: #3b82f620; color: var(--blue); border: 1px solid #3b82f630; } .btn-blue:hover { background: #3b82f635; }
+    .btn-sm { padding: 5px 10px; font-size: .78rem; }
+    .profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
+    .profile-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; transition: all .15s; }
+    .profile-card:hover { border-color: var(--accent); }
+    .profile-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+    .profile-avatar { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: 1rem; flex-shrink: 0; }
+    .profile-name { font-weight: 600; font-size: .95rem; } .profile-url { font-size: .78rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+    .badge { font-size: .7rem; padding: 2px 8px; border-radius: 99px; font-weight: 600; white-space: nowrap; }
+    .badge-green { background: #22c55e20; color: var(--green); } .badge-yellow { background: #eab30820; color: var(--yellow); }
+    .badge-red { background: #ef444420; color: var(--red); } .badge-purple { background: #7c3aed20; color: var(--accent2); }
+    .badge-blue { background: #3b82f620; color: var(--blue); }
+    .profile-meta { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .meta-row { display: flex; justify-content: space-between; font-size: .8rem; color: var(--muted); } .meta-val { color: var(--text); font-size: .8rem; }
+    .profile-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .modal-overlay { position: fixed; inset: 0; background: #00000090; z-index: 999; display: none; place-items: center; overflow-y: auto; padding: 20px; }
+    .modal-overlay.open { display: grid; }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px; width: 520px; max-width: 95vw; }
+    .modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+    .form-group { margin-bottom: 16px; } .form-label { font-size: .82rem; color: var(--muted); margin-bottom: 6px; display: block; }
+    .form-label-hint { font-size: .75rem; color: var(--muted); font-weight: 400; margin-left: 6px; }
+    .form-input, .form-select, .form-textarea { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: .88rem; font-family: var(--font); outline: none; transition: border .15s; }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
+    .form-textarea { resize: vertical; min-height: 80px; } .form-select option { background: var(--card); }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .section-divider { font-size: .78rem; color: var(--accent2); font-weight: 700; letter-spacing: .5px; text-transform: uppercase; margin: 18px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .stat-label { font-size: .78rem; color: var(--muted); margin-bottom: 6px; } .stat-val { font-size: 1.8rem; font-weight: 700; }
+    .stat-sub { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+    .fp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .fp-row { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+    .fp-label { font-size: .75rem; color: var(--muted); margin-bottom: 4px; } .fp-val { font-size: .85rem; font-family: monospace; }
+    .log-container { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; height: 340px; overflow-y: auto; font-family: monospace; font-size: .82rem; }
+    .log-line { padding: 3px 0; border-bottom: 1px solid #ffffff08; } .log-line span { margin-right: 10px; }
+    .log-time { color: var(--muted); } .log-ok { color: var(--green); } .log-err { color: var(--red); } .log-info { color: #60a5fa; } .log-warn { color: var(--yellow); }
+    .proxy-list, .schedule-list { display: flex; flex-direction: column; gap: 10px; }
+    .proxy-item, .schedule-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; }
+    .totp-display { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; margin-top: 12px; }
+    .totp-code { font-size: 2.2rem; font-weight: 700; letter-spacing: 8px; font-family: monospace; color: var(--accent2); }
+    .totp-timer { font-size: .78rem; color: var(--muted); margin-top: 6px; }
+    .totp-bar { background: var(--border); border-radius: 99px; height: 4px; margin-top: 8px; overflow: hidden; }
+    .totp-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 1s linear; }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); } .empty-icon { font-size: 3rem; margin-bottom: 12px; } .empty-text { font-size: .95rem; margin-bottom: 16px; }
+    .tabs-inner { display: flex; gap: 2px; background: var(--surface); border-radius: 10px; padding: 4px; margin-bottom: 20px; width: fit-content; flex-wrap: wrap; }
+    .tab-btn { padding: 7px 14px; border-radius: 7px; border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: .82rem; font-weight: 600; transition: all .15s; }
+    .tab-btn.active { background: var(--card); color: var(--text); }
+    .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; font-size: .85rem; min-width: 220px; animation: slideIn .2s ease; display: flex; align-items: center; gap: 8px; }
+    @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .toast.success { border-color: #22c55e40; } .toast.error { border-color: #ef444440; }
+    .inline-totp { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-family: monospace; font-size: .9rem; }
+    .inline-totp .code { color: var(--accent2); font-weight: 700; letter-spacing: 3px; } .inline-totp .timer { color: var(--muted); font-size: .75rem; }
+    .mobile-toggle { display: none; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 1rem; }
+    ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    @media (max-width: 768px) {
+      .mobile-toggle { display: block; }
+      .sidebar { position: fixed; left: -260px; top: 56px; bottom: 0; z-index: 200; transition: left .25s; width: 240px; }
+      .sidebar.open { left: 0; box-shadow: 4px 0 20px #0008; }
+      .main { padding: 16px; }
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+      .fp-grid { grid-template-columns: 1fr; }
+      .status-bar span:not(#clock) { display: none; }
+      .modal { width: 100%; padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
+    <div class="logo"><div class="logo-icon">👤</div><span>Phantom</span><span style="font-size:.68rem;color:var(--muted);font-weight:400;margin-left:4px;">v2</span></div>
+  </div>
+  <div class="status-bar">
+    <span id="backend-status"><span class="status-dot"></span>Local Mode</span>
+    <span id="profileCount">0 Profiles</span>
+    <span id="clock"></span>
+  </div>
+</div>
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-item active" onclick="switchTab('dashboard',this)"><span>📊</span> Dashboard</div>
+    <div class="sidebar-item" onclick="switchTab('profiles',this)"><span>👥</span> Profiles</div>
+    <div class="sidebar-item" onclick="switchTab('autologin',this)"><span>🔑</span> Auto-Login</div>
+    <div class="sidebar-item" onclick="switchTab('cookies',this)"><span>🍪</span> Cookie Import</div>
+    <div class="sidebar-item" onclick="switchTab('schedule',this)"><span>⏰</span> Scheduler</div>
+    <div class="sidebar-item" onclick="switchTab('totp',this)"><span>🔐</span> 2FA / TOTP</div>
+    <div class="sidebar-item" onclick="switchTab('fingerprint',this)"><span>🛡️</span> Fingerprint</div>
+    <div class="sidebar-item" onclick="switchTab('proxies',this)"><span>🌐</span> Proxies</div>
+    <div class="sidebar-item" onclick="switchTab('logs',this)"><span>📋</span> Activity Log</div>
+    <div class="sidebar-item" onclick="switchTab('settings',this)"><span>⚙️</span> Settings</div>
+  </div>
+  <div class="main">
+    <!-- DASHBOARD -->
+    <div class="tab active" id="tab-dashboard">
+      <div class="section-header"><div><div class="section-title">Dashboard</div><div class="section-sub">Your antidetect environment</div></div>
+        <button class="btn btn-primary" onclick="switchTab('profiles',document.querySelectorAll('.sidebar-item')[1])">+ New Profile</button></div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Total Profiles</div><div class="stat-val" id="stat-total">0</div><div class="stat-sub">All platforms</div></div>
+        <div class="stat-card"><div class="stat-label">Active Sessions</div><div class="stat-val" id="stat-active" style="color:var(--green)">0</div><div class="stat-sub">Running now</div></div>
+        <div class="stat-card"><div class="stat-label">Schedules</div><div class="stat-val" id="stat-schedules" style="color:var(--blue)">0</div><div class="stat-sub">Auto-login tasks</div></div>
+        <div class="stat-card"><div class="stat-label">TOTP Keys</div><div class="stat-val" id="stat-totp" style="color:var(--accent2)">0</div><div class="stat-sub">2FA configured</div></div>
+        <div class="stat-card"><div class="stat-label">Logins Today</div><div class="stat-val" id="stat-logins" style="color:var(--yellow)">0</div><div class="stat-sub">Auto-login runs</div></div>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;"><div style="font-size:.9rem;font-weight:600;margin-bottom:14px;">Quick Launch</div><div id="quick-launch-list"></div></div>
+    </div>
+    <!-- PROFILES -->
+    <div class="tab" id="tab-profiles">
+      <div class="section-header"><div><div class="section-title">Profiles</div><div class="section-sub">Manage browser profiles & credentials</div></div><button class="btn btn-primary" onclick="openAddProfileModal()">+ Add Profile</button></div>
+      <div class="profile-grid" id="profile-grid"></div>
+    </div>
+    <!-- AUTO-LOGIN -->
+    <div class="tab" id="tab-autologin">
+      <div class="section-header"><div><div class="section-title">Auto-Login</div><div class="section-sub">Launch sessions using credentials or cookies</div></div><button class="btn btn-primary" onclick="runAllLogins()">▶ Run All</button></div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;"><div style="font-size:.85rem;font-weight:600;margin-bottom:14px;">Login Queue</div><div id="login-queue"></div></div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;"><div style="font-size:.85rem;font-weight:600;margin-bottom:14px;">Login Results</div><div id="login-results" style="display:flex;flex-direction:column;gap:8px;min-height:60px;"><div style="color:var(--muted);font-size:.82rem;">No runs yet.</div></div></div>
+    </div>
+    <!-- COOKIE IMPORT -->
+    <div class="tab" id="tab-cookies">
+      <div class="section-header"><div><div class="section-title">🍪 Cookie Import</div><div class="section-sub">Import from any format — auto-detected</div></div></div>
+      <div class="tabs-inner" id="cookie-format-tabs">
+        <button class="tab-btn active" onclick="setCookieTab('json',this)">JSON Array</button>
+        <button class="tab-btn" onclick="setCookieTab('netscape',this)">Netscape</button>
+        <button class="tab-btn" onclick="setCookieTab('editthiscookie',this)">EditThisCookie</button>
+        <button class="tab-btn" onclick="setCookieTab('header',this)">Cookie Header</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
+          <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px;" id="cookie-format-hint">Paste JSON array: <code style="background:var(--surface);padding:2px 5px;border-radius:4px;">[{"name":"x","value":"y","domain":".site.com"}]</code></div>
+          <textarea class="form-textarea" id="cookie-input" style="min-height:200px;font-family:monospace;font-size:.8rem;" placeholder="Paste cookies here..."></textarea>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="parseCookies()">Parse Cookies</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('cookie-file-input').click()">📁 Load File</button>
+            <input type="file" id="cookie-file-input" style="display:none;" accept=".txt,.json" onchange="loadCookieFile(this)">
+          </div>
+        </div>
+        <div>
+          <div style="font-size:.85rem;font-weight:600;margin-bottom:10px;">Parsed Preview</div>
+          <div id="cookie-preview" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;min-height:200px;font-family:monospace;font-size:.78rem;overflow-y:auto;max-height:260px;"><span style="color:var(--muted);">Nothing parsed yet.</span></div>
+          <div id="cookie-assign-area" style="display:none;margin-top:12px;">
+            <div style="font-size:.82rem;color:var(--muted);margin-bottom:6px;">Assign to profile:</div>
+            <div style="display:flex;gap:8px;align-items:center;"><select class="form-select" id="cookie-assign-profile" style="flex:1;"></select><button class="btn btn-success" onclick="assignCookiesToProfile()">Assign ✓</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- SCHEDULER -->
+    <div class="tab" id="tab-schedule">
+      <div class="section-header"><div><div class="section-title">⏰ Scheduler</div><div class="section-sub">Auto-login at set times</div></div><button class="btn btn-primary" onclick="openAddScheduleModal()">+ Add Schedule</button></div>
+      <div class="schedule-list" id="schedule-list"></div>
+    </div>
+    <!-- TOTP -->
+    <div class="tab" id="tab-totp">
+      <div class="section-header"><div><div class="section-title">🔐 2FA / TOTP</div><div class="section-sub">Live one-time passwords per profile</div></div><button class="btn btn-primary" onclick="openAddTotpModal()">+ Add TOTP Key</button></div>
+      <div id="totp-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;"></div>
+    </div>
+    <!-- FINGERPRINT -->
+    <div class="tab" id="tab-fingerprint">
+      <div class="section-header"><div><div class="section-title">Fingerprint Spoofing</div><div class="section-sub">Randomize browser identity per profile</div></div><button class="btn btn-primary" onclick="randomizeFingerprint()">🔄 Randomize</button></div>
+      <div class="fp-grid" id="fp-grid"></div>
+      <div style="margin-top:20px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;">
+        <div style="font-size:.85rem;font-weight:600;margin-bottom:14px;">Per-Profile Override</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <select class="form-select" id="fp-profile-select" style="max-width:220px;"><option value="">-- Select Profile --</option></select>
+          <button class="btn btn-ghost btn-sm" onclick="loadProfileFingerprint()">Load</button>
+          <button class="btn btn-primary btn-sm" onclick="saveProfileFingerprint()">Save</button>
+        </div>
+      </div>
+    </div>
+    <!-- PROXIES -->
+    <div class="tab" id="tab-proxies">
+      <div class="section-header"><div><div class="section-title">Proxies</div><div class="section-sub">Manage proxy rotation</div></div><button class="btn btn-primary" onclick="openAddProxyModal()">+ Add Proxy</button></div>
+      <div class="proxy-list" id="proxy-list"></div>
+    </div>
+    <!-- LOGS -->
+    <div class="tab" id="tab-logs">
+      <div class="section-header"><div><div class="section-title">Activity Log</div><div class="section-sub">Real-time events</div></div><button class="btn btn-ghost btn-sm" onclick="clearLogs()">Clear</button></div>
+      <div class="log-container" id="log-container"></div>
+    </div>
+    <!-- SETTINGS -->
+    <div class="tab" id="tab-settings">
+      <div class="section-header"><div><div class="section-title">Settings</div><div class="section-sub">Global configuration</div></div></div>
+      <div style="display:flex;flex-direction:column;gap:14px;max-width:500px;">
+        <div class="fp-row"><div class="fp-label">Auto-rotate fingerprint on launch</div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;"><input type="checkbox" id="setting-autoRotate" checked style="accent-color:var(--accent);width:16px;height:16px;"><span style="font-size:.85rem;">Enabled</span></label></div>
+        <div class="fp-row"><div class="fp-label">Default login method</div>
+          <select class="form-select" id="setting-loginMethod" style="margin-top:6px;"><option value="cookies">Cookies (preferred)</option><option value="password">Username / Password</option><option value="both" selected>Cookies first, fallback password</option></select></div>
+        <div class="fp-row"><div class="fp-label">Login delay between profiles (ms)</div><input type="number" class="form-input" id="setting-delay" value="1500" style="margin-top:6px;"></div>
+        <div class="fp-row"><div class="fp-label">Backend API URL <span class="form-label-hint">(leave empty for offline/localStorage mode)</span></div><input type="text" class="form-input" id="setting-apiUrl" style="margin-top:6px;" placeholder="http://YOUR-SERVER:3000" oninput="saveApiUrl()"><div id="api-status" style="font-size:.78rem;margin-top:6px;color:var(--muted);">Not connected</div><button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="testBackendConnection()">🔌 Test Connection</button><button class="btn btn-blue btn-sm" style="margin-top:8px;margin-left:6px;" onclick="syncFromBackend()">⬇ Sync from Backend</button></div>
+        <div class="fp-row"><div class="fp-label">Export all data</div><button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="exportAll()">📤 Export JSON</button></div>
+        <div class="fp-row"><div class="fp-label">Import data</div><input type="file" id="import-input" accept=".json" style="display:none;" onchange="importAll(this)"><button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="document.getElementById('import-input').click()">📥 Import JSON</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ADD PROFILE MODAL -->
+<div class="modal-overlay" id="modal-add-profile"><div class="modal"><div class="modal-title">👤 Add Profile</div>
+  <div class="form-group"><label class="form-label">Profile Name</label><input type="text" class="form-input" id="p-name" placeholder="Ad Account #1"></div>
+  <div class="form-group"><label class="form-label">Target URL</label><input type="text" class="form-input" id="p-url" placeholder="https://ads.google.com"></div>
+  <div class="form-group"><label class="form-label">Platform</label><select class="form-select" id="p-platform"><option>Google</option><option>Facebook</option><option>TikTok</option><option>Amazon</option><option>Twitter/X</option><option>LinkedIn</option><option>Custom</option></select></div>
+  <div class="section-divider">🔑 Credentials</div>
+  <div class="form-group"><label class="form-label">Username / Email</label><input type="text" class="form-input" id="p-user" placeholder="user@email.com"></div>
+  <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-input" id="p-pass" placeholder="••••••••"></div>
+  <div class="form-group"><label class="form-label">Cookies <span class="form-label-hint">(any format — auto-detected)</span></label><textarea class="form-textarea" id="p-cookies" placeholder="Paste cookies in any format..."></textarea><button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="autoParseCookiesInModal()">🔍 Auto-Parse</button></div>
+  <div class="section-divider">🔐 2FA</div>
+  <div class="form-group"><label class="form-label">TOTP Secret <span class="form-label-hint">(optional)</span></label><input type="text" class="form-input" id="p-totp" placeholder="JBSWY3DPEHPK3PXP" style="font-family:monospace;"></div>
+  <div class="section-divider">⚙️ Advanced</div>
+  <div class="form-group"><label class="form-label">User-Agent <span class="form-label-hint">(blank = auto)</span></label><input type="text" class="form-input" id="p-ua" placeholder="Mozilla/5.0 ..."></div>
+  <div class="form-group"><label class="form-label">Proxy</label><select class="form-select" id="p-proxy"><option value="">None</option></select></div>
+  <div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="p-notes" style="min-height:55px;"></textarea></div>
+  <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal('modal-add-profile')">Cancel</button><button class="btn btn-primary" onclick="saveProfile()">Save Profile</button></div>
+</div></div>
+<!-- ADD PROXY MODAL -->
+<div class="modal-overlay" id="modal-add-proxy"><div class="modal"><div class="modal-title">🌐 Add Proxy</div>
+  <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="proxy-type"><option>HTTP</option><option>HTTPS</option><option>SOCKS5</option><option>SOCKS4</option></select></div>
+  <div class="form-group"><label class="form-label">Host : Port</label><input type="text" class="form-input" id="proxy-addr" placeholder="192.168.1.1:8080"></div>
+  <div class="form-group"><label class="form-label">Username (optional)</label><input type="text" class="form-input" id="proxy-user"></div>
+  <div class="form-group"><label class="form-label">Password (optional)</label><input type="password" class="form-input" id="proxy-pass"></div>
+  <div class="form-group"><label class="form-label">Label</label><input type="text" class="form-input" id="proxy-label" placeholder="US Residential"></div>
+  <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal('modal-add-proxy')">Cancel</button><button class="btn btn-primary" onclick="saveProxy()">Save</button></div>
+</div></div>
+<!-- ADD SCHEDULE MODAL -->
+<div class="modal-overlay" id="modal-add-schedule"><div class="modal"><div class="modal-title">⏰ Add Schedule</div>
+  <div class="form-group"><label class="form-label">Schedule Name</label><input type="text" class="form-input" id="sch-name" placeholder="Morning Login Run"></div>
+  <div class="form-group"><label class="form-label">Profiles to run</label><select class="form-select" id="sch-profiles" multiple style="min-height:100px;"></select><div style="font-size:.75rem;color:var(--muted);margin-top:4px;">Hold Ctrl/Cmd to select multiple</div></div>
+  <div class="form-group"><label class="form-label">Repeat</label><select class="form-select" id="sch-repeat" onchange="updateScheduleFields()"><option value="once">Once (one-time)</option><option value="daily">Daily</option><option value="weekdays">Weekdays only</option><option value="hourly">Every N hours</option><option value="interval">Every N minutes</option></select></div>
+  <div class="form-group" id="sch-time-group"><label class="form-label">Time</label><input type="time" class="form-input" id="sch-time" value="09:00"></div>
+  <div class="form-group" id="sch-interval-group" style="display:none;"><label class="form-label">Interval</label><input type="number" class="form-input" id="sch-interval" value="60"></div>
+  <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="sch-status"><option value="active">Active</option><option value="paused">Paused</option></select></div>
+  <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal('modal-add-schedule')">Cancel</button><button class="btn btn-primary" onclick="saveSchedule()">Save</button></div>
+</div></div>
+<!-- ADD TOTP MODAL -->
+<div class="modal-overlay" id="modal-add-totp"><div class="modal"><div class="modal-title">🔐 Add TOTP Key</div>
+  <div class="form-group"><label class="form-label">Label / Account Name</label><input type="text" class="form-input" id="totp-label" placeholder="Google Ads #1"></div>
+  <div class="form-group"><label class="form-label">Secret Key <span class="form-label-hint">(base32)</span></label><input type="text" class="form-input" id="totp-secret" placeholder="JBSWY3DPEHPK3PXP" style="font-family:monospace;letter-spacing:2px;"></div>
+  <div class="form-group"><label class="form-label">Assign to Profile</label><select class="form-select" id="totp-profile"><option value="">-- None --</option></select></div>
+  <div id="totp-preview-area" style="display:none;"><div class="totp-display"><div style="font-size:.75rem;color:var(--muted);margin-bottom:6px;">LIVE CODE</div><div class="totp-code" id="totp-preview-code">------</div><div class="totp-timer" id="totp-preview-timer">-- seconds</div><div class="totp-bar"><div class="totp-bar-fill" id="totp-preview-bar" style="width:100%"></div></div></div></div>
+  <button class="btn btn-ghost btn-sm" style="margin-top:10px;" onclick="previewTOTP()">🔍 Preview Code</button>
+  <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal('modal-add-totp')">Cancel</button><button class="btn btn-primary" onclick="saveTOTP()">Save Key</button></div>
+</div></div>
+<div class="toast-container" id="toast-container"></div>
+<script>
+// === BACKEND CONNECTION ===
+let API_URL = localStorage.getItem('ph_api_url') || (window.location.origin.startsWith('https://phantom-backend') ? window.location.origin : 'https://phantom-backend-production-dfe6.up.railway.app');
+let backendConnected = false;
+
+function saveApiUrl(){
+  API_URL = document.getElementById('setting-apiUrl').value.trim();
+  localStorage.setItem('ph_api_url', API_URL);
+  if(API_URL) testBackendConnection();
+  else { backendConnected=false; document.getElementById('api-status').innerHTML='Offline mode (localStorage)'; document.getElementById('api-status').style.color='var(--muted)'; }
+}
+
+async function testBackendConnection(){
+  const statusEl = document.getElementById('api-status');
+  if(!API_URL){ statusEl.innerHTML='No URL set'; statusEl.style.color='var(--muted)'; return; }
+  statusEl.innerHTML='Testing…'; statusEl.style.color='var(--yellow)';
+  try{
+    const r = await fetch(API_URL+'/api/health', {method:'GET', timeout:8000});
+    const d = await r.json();
+    if(d.status==='ok'){
+      backendConnected = true;
+      statusEl.innerHTML='✅ Connected — '+d.sessions+' sessions, '+d.profiles+' profiles';
+      statusEl.style.color='var(--green)';
+      addLog('ok','Backend connected: '+API_URL);
+      toast('Backend connected ✓','success');
+    } else { throw new Error('Bad response'); }
+  }catch(e){
+    backendConnected = false;
+    statusEl.innerHTML='❌ Connection failed — '+e.message;
+    statusEl.style.color='var(--red)';
+    addLog('err','Backend connection failed: '+e.message);
+    toast('Backend connection failed','error');
+  }
+}
+
+async function syncFromBackend(){
+  if(!backendConnected){ toast('Connect to backend first','error'); return; }
+  try{
+    const r = await fetch(API_URL+'/api/profiles');
+    const profiles = await r.json();
+    if(Array.isArray(profiles) && profiles.length > 0){
+      // Merge: don't overwrite local profiles, just add backend ones that don't exist locally
+      const localIds = state.profiles.map(p=>p.id);
+      profiles.forEach(bp => { if(!localIds.includes(bp.id)){ state.profiles.push(bp); } });
+      persist(); renderProfiles(); renderDashboard();
+      toast('Synced '+profiles.length+' profiles from backend ✓','success');
+      addLog('info','Synced '+profiles.length+' profiles from backend');
+    } else {
+      toast('No profiles on backend to sync','error');
+    }
+  }catch(e){
+    toast('Sync failed: '+e.message,'error');
+    addLog('err','Sync failed: '+e.message);
+  }
+}
+
+async function syncProfileToBackend(profile){
+  if(!backendConnected || !API_URL) return;
+  try{
+    await fetch(API_URL+'/api/profiles', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(profile)
+    });
+  }catch(e){ console.error('Profile sync error:', e); }
+}
+
+async function syncScheduleToBackend(schedule){
+  if(!backendConnected || !API_URL) return;
+  try{
+    await fetch(API_URL+'/api/schedules', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(schedule)
+    });
+  }catch(e){ console.error('Schedule sync error:', e); }
+}
+
+// STATE
+let state = {
+  profiles: JSON.parse(localStorage.getItem('ph_profiles')||'[]'),
+  proxies: JSON.parse(localStorage.getItem('ph_proxies')||'[]'),
+  schedules: JSON.parse(localStorage.getItem('ph_schedules')||'[]'),
+  totpKeys: JSON.parse(localStorage.getItem('ph_totp')||'[]'),
+  logs: [], loginCount: 0
+};
+const COLORS=['#7c3aed','#2563eb','#16a34a','#dc2626','#d97706','#0891b2','#be185d','#0d9488'];
+const UA_LIST=['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36','Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15','Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0','Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0','Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'];
+
+// TOTP ENGINE
+function base32Decode(b32){const a='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits=0,val=0,out=[];b32=b32.toUpperCase().replace(/=+$/,'').replace(/\s/g,'');for(let i=0;i<b32.length;i++){const idx=a.indexOf(b32[i]);if(idx===-1)continue;val=(val<<5)|idx;bits+=5;if(bits>=8){bits-=8;out.push((val>>bits)&0xff);}}return out;}
+function generateTOTP(secret,offset=0){try{const step=30,counter=Math.floor(Date.now()/1000/step)+offset;const key=base32Decode(secret.replace(/\s/g,''));const keyWA=CryptoJS.lib.WordArray.create(key);const buf=new ArrayBuffer(8);const view=new DataView(buf);view.setUint32(4,counter,false);const msgWA=CryptoJS.lib.WordArray.create(new Uint8Array(buf));const hmac=CryptoJS.HmacSHA1(msgWA,keyWA);const hex=hmac.toString(CryptoJS.enc.Hex);const bytes=hex.match(/.{2}/g).map(h=>parseInt(h,16));const off=bytes[19]&0x0f;const code=((bytes[off]&0x7f)<<24|bytes[off+1]<<16|bytes[off+2]<<8|bytes[off+3])%1000000;return code.toString().padStart(6,'0');}catch{return'------';}}
+function totpSecondsRemaining(){return 30-(Math.floor(Date.now()/1000)%30);}
+
+// COOKIE PARSER
+let parsedCookies=[],cookieFormat='json';
+function setCookieTab(fmt,el){cookieFormat=fmt;document.querySelectorAll('#cookie-format-tabs .tab-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');const hints={json:'Paste JSON array: <code style="background:var(--surface);padding:2px 5px;border-radius:4px;">[{"name":"x","value":"y","domain":".site.com"}]</code>',netscape:'Paste Netscape format (tab-separated). Lines starting with # are comments.',editthiscookie:'Paste JSON export from EditThisCookie extension.',header:'Paste raw Cookie header: <code style="background:var(--surface);padding:2px 5px;border-radius:4px;">name=value; name2=value2</code>'};document.getElementById('cookie-format-hint').innerHTML=hints[fmt];}
+function detectCookieFormat(raw){const t=raw.trim();if(t.startsWith('[')||t.startsWith('{')){try{JSON.parse(t);return'json';}catch{}}if(t.includes('\t')&&t.split('\n').some(l=>l.split('\t').length>=7))return'netscape';if(!t.includes('\n')&&t.includes('=')&&t.includes(';'))return'header';return'json';}
+function parseCookieRaw(raw,format){raw=raw.trim();if(!raw)return[];const fmt=format==='json'||format==='editthiscookie'?detectCookieFormat(raw):format;
+if(fmt==='json'||fmt==='editthiscookie'){try{let d=JSON.parse(raw);if(!Array.isArray(d))d=[d];return d.map(c=>({name:c.name||'',value:c.value||'',domain:c.domain||'',path:c.path||'/',secure:!!c.secure,httpOnly:!!c.httpOnly,expirationDate:c.expirationDate||c.expires||''}));}catch(e){throw new Error('Invalid JSON: '+e.message);}}
+if(fmt==='netscape'){return raw.split('\n').filter(l=>l&&!l.startsWith('#')).map(l=>{const p=l.split('\t');if(p.length<7)return null;return{domain:p[0],flag:p[1],path:p[2],secure:p[3]==='TRUE',expirationDate:p[4],name:p[5],value:p[6]};}).filter(Boolean);}
+if(fmt==='header'){return raw.split(';').map(p=>{const[n,...r]=p.split('=');return n?{name:n.trim(),value:r.join('=').trim(),domain:'',path:'/'}:null;}).filter(Boolean);}
+return[];}
+function parseCookies(){const raw=document.getElementById('cookie-input').value;try{parsedCookies=parseCookieRaw(raw,cookieFormat);if(!parsedCookies.length){toast('No cookies found','error');return;}renderCookiePreview();toast(`Parsed ${parsedCookies.length} cookies ✓`,'success');}catch(e){toast('Parse error: '+e.message,'error');}}
+function renderCookiePreview(){document.getElementById('cookie-preview').innerHTML=parsedCookies.map(c=>`<div style="padding:4px 0;border-bottom:1px solid #ffffff08;"><span style="color:var(--accent2);">${c.name}</span>=<span style="color:var(--green);">${c.value.slice(0,40)}${c.value.length>40?'…':''}</span> <span style="color:var(--muted);font-size:.72rem;">${c.domain}</span></div>`).join('');const a=document.getElementById('cookie-assign-area');a.style.display='block';document.getElementById('cookie-assign-profile').innerHTML='<option value="">-- Select --</option>'+state.profiles.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');}
+function assignCookiesToProfile(){const id=document.getElementById('cookie-assign-profile').value;if(!id){toast('Select a profile first','error');return;}const p=state.profiles.find(x=>x.id===id);if(!p)return;p.cookies=JSON.stringify(parsedCookies);persist();toast(`Assigned to "${p.name}" ✓`,'success');addLog('info',`Cookies assigned to "${p.name}"`);}
+function loadCookieFile(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{document.getElementById('cookie-input').value=e.target.result;toast('File loaded','success');};r.readAsText(f);input.value='';}
+function autoParseCookiesInModal(){const raw=document.getElementById('p-cookies').value.trim();if(!raw)return;try{const fmt=detectCookieFormat(raw);const parsed=parseCookieRaw(raw,fmt);document.getElementById('p-cookies').value=JSON.stringify(parsed,null,2);toast(`Parsed ${parsed.length} cookies (${fmt})`,'success');}catch(e){toast('Could not parse','error');}}
+
+// SCHEDULER
+function updateScheduleFields(){const v=document.getElementById('sch-repeat').value;const needsInt=v==='hourly'||v==='interval';document.getElementById('sch-time-group').style.display=(v==='once'||v==='daily'||v==='weekdays')?'block':'none';document.getElementById('sch-interval-group').style.display=needsInt?'block':'none';}
+function openAddScheduleModal(){document.getElementById('sch-name').value='';document.getElementById('sch-time').value='09:00';document.getElementById('sch-repeat').value='daily';document.getElementById('sch-status').value='active';updateScheduleFields();document.getElementById('sch-profiles').innerHTML=state.profiles.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');document.getElementById('modal-add-schedule').classList.add('open');}
+function saveSchedule(){const name=document.getElementById('sch-name').value.trim();if(!name){toast('Name required','error');return;}const profiles=Array.from(document.getElementById('sch-profiles').selectedOptions).map(o=>o.value);if(!profiles.length){toast('Select profiles','error');return;}const repeat=document.getElementById('sch-repeat').value;const s={id:Date.now().toString(),name,profiles,repeat,time:document.getElementById('sch-time').value,interval:document.getElementById('sch-interval').value,status:document.getElementById('sch-status').value,lastRun:null,runCount:0};state.schedules.push(s);persist();closeModal("modal-add-schedule");syncScheduleToBackend(s);renderSchedules();renderDashboard();startScheduleTimer(s);toast(`Schedule "${name}" created ✓`,'success');addLog('info',`Schedule "${name}" created`);}
+function deleteSchedule(id){state.schedules=state.schedules.filter(x=>x.id!==id);persist();renderSchedules();renderDashboard();toast('Schedule deleted','success');}
+function toggleSchedule(id){const s=state.schedules.find(x=>x.id===id);if(!s)return;s.status=s.status==='active'?'paused':'active';persist();renderSchedules();toast(`Schedule ${s.status}`,'success');}
+function startScheduleTimer(s){if(s.status!=='active')return;let delay=0;if(s.repeat==='interval')delay=parseInt(s.interval)*60000;else if(s.repeat==='hourly')delay=parseInt(s.interval)*3600000;else{const[h,m]=s.time.split(':').map(Number);const t=new Date();t.setHours(h,m,0,0);if(t<=new Date())t.setDate(t.getDate()+1);delay=t-new Date();}setTimeout(()=>{const sc=state.schedules.find(x=>x.id===s.id);if(!sc||sc.status!=='active')return;runSchedule(sc);if(sc.repeat!=='once')startScheduleTimer(sc);},delay);}
+function runSchedule(s){s.lastRun=new Date().toLocaleString();s.runCount++;persist();addLog('info',`⏰ "${s.name}" firing`);s.profiles.forEach((pid,i)=>setTimeout(()=>launchProfile(pid,true),i*1500));renderSchedules();}
+function renderSchedules(){const el=document.getElementById('schedule-list');if(!state.schedules.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">⏰</div><div class="empty-text">No schedules.</div><button class="btn btn-primary" onclick="openAddScheduleModal()">+ Add Schedule</button></div>';return;}el.innerHTML=state.schedules.map(s=>{const names=s.profiles.map(pid=>state.profiles.find(p=>p.id===pid)?.name||'?').join(', ');const rl={once:'One-time',daily:'Daily',weekdays:'Weekdays',hourly:`Every ${s.interval}h`,interval:`Every ${s.interval}min`}[s.repeat];const tl=(s.repeat==='daily'||s.repeat==='weekdays'||s.repeat==='once')?` @ ${s.time}`:'';return `<div class="schedule-item"><div><div style="font-weight:600;font-size:.9rem;">${s.name}</div><div style="font-size:.78rem;color:var(--muted);margin-top:3px;">${rl}${tl} · ${s.profiles.length} profile(s)</div><div style="font-size:.75rem;color:var(--muted);margin-top:2px;">${names}</div><div style="font-size:.75rem;color:var(--muted);margin-top:2px;">Last: ${s.lastRun||'Never'} · Runs: ${s.runCount}</div></div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="badge ${s.status==='active'?'badge-green':'badge-yellow'}">${s.status}</span><button class="btn btn-ghost btn-sm" onclick="toggleSchedule('${s.id}')">${s.status==='active'?'⏸':'▶'}</button><button class="btn btn-success btn-sm" onclick="runSchedule(state.schedules.find(x=>x.id==='${s.id}'))">Run</button><button class="btn btn-danger btn-sm" onclick="deleteSchedule('${s.id}')">✕</button></div></div>`;}).join('');}
+
+// TOTP
+function openAddTotpModal(){document.getElementById('totp-label').value='';document.getElementById('totp-secret').value='';document.getElementById('totp-preview-area').style.display='none';document.getElementById('totp-profile').innerHTML='<option value="">-- None --</option>'+state.profiles.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');document.getElementById('modal-add-totp').classList.add('open');}
+let totpPrevInt=null;
+function previewTOTP(){const s=document.getElementById('totp-secret').value.trim();if(!s){toast('Enter secret first','error');return;}document.getElementById('totp-preview-area').style.display='block';if(totpPrevInt)clearInterval(totpPrevInt);const u=()=>{const code=generateTOTP(s),rem=totpSecondsRemaining();document.getElementById('totp-preview-code').textContent=code.slice(0,3)+' '+code.slice(3);document.getElementById('totp-preview-timer').textContent=rem+' seconds remaining';document.getElementById('totp-preview-bar').style.width=((rem/30)*100)+'%';};u();totpPrevInt=setInterval(u,1000);}
+function saveTOTP(){const label=document.getElementById('totp-label').value.trim(),secret=document.getElementById('totp-secret').value.trim().toUpperCase().replace(/\s/g,'');if(!label||!secret){toast('Label and secret required','error');return;}const entry={id:Date.now().toString(),label,secret,profileId:document.getElementById('totp-profile').value};state.totpKeys.push(entry);if(entry.profileId){const p=state.profiles.find(x=>x.id===entry.profileId);if(p)p.totpSecret=secret;}persist();if(totpPrevInt)clearInterval(totpPrevInt);closeModal('modal-add-totp');renderTOTPList();renderDashboard();toast(`TOTP "${label}" saved ✓`,'success');}
+function deleteTOTP(id){state.totpKeys=state.totpKeys.filter(x=>x.id!==id);persist();renderTOTPList();renderDashboard();toast('TOTP removed','success');}
+function renderTOTPList(){const el=document.getElementById('totp-list');if(!state.totpKeys.length){el.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🔐</div><div class="empty-text">No TOTP keys.</div><button class="btn btn-primary" onclick="openAddTotpModal()">+ Add TOTP Key</button></div>';return;}el.innerHTML=state.totpKeys.map(k=>{const pn=k.profileId?(state.profiles.find(p=>p.id===k.profileId)?.name||'?'):'Not linked';return `<div class="fp-row" id="totp-card-${k.id}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div><div style="font-weight:600;font-size:.9rem;">${k.label}</div><div style="font-size:.75rem;color:var(--muted);">${pn}</div></div><button class="btn btn-danger btn-sm" onclick="deleteTOTP('${k.id}')">✕</button></div><div class="inline-totp"><span class="code" id="totp-code-${k.id}">------</span><span class="timer" id="totp-timer-${k.id}">--s</span><button class="btn btn-ghost btn-sm" onclick="copyTOTP('${k.id}')" style="margin-left:auto;">📋</button></div><div class="totp-bar" style="margin-top:8px;"><div class="totp-bar-fill" id="totp-bar-${k.id}" style="width:100%"></div></div></div>`;}).join('');}
+function copyTOTP(id){const c=document.getElementById('totp-code-'+id)?.textContent?.replace(/\s/g,'');if(c&&navigator.clipboard){navigator.clipboard.writeText(c);toast('Copied!','success');}}
+setInterval(()=>{state.totpKeys.forEach(k=>{const code=generateTOTP(k.secret),rem=totpSecondsRemaining();const ce=document.getElementById('totp-code-'+k.id),te=document.getElementById('totp-timer-'+k.id),be=document.getElementById('totp-bar-'+k.id);if(ce)ce.textContent=code.slice(0,3)+' '+code.slice(3);if(te)te.textContent=rem+'s';if(be)be.style.width=((rem/30)*100)+'%';});},1000);
+
+// PROFILES
+function openAddProfileModal(){['p-name','p-url','p-user','p-pass','p-cookies','p-ua','p-notes','p-totp'].forEach(id=>document.getElementById(id).value='');document.getElementById('p-platform').value='Google';renderProxyOptions();document.getElementById('modal-add-profile').classList.add('open');}
+function saveProfile(){const name=document.getElementById('p-name').value.trim(),url=document.getElementById('p-url').value.trim();if(!name||!url){toast('Name and URL required','error');return;}const totpSecret=document.getElementById('p-totp').value.trim();const p={id:Date.now().toString(),name,url,platform:document.getElementById('p-platform').value,username:document.getElementById('p-user').value.trim(),password:document.getElementById('p-pass').value,cookies:document.getElementById('p-cookies').value.trim(),userAgent:document.getElementById('p-ua').value.trim()||UA_LIST[Math.floor(Math.random()*UA_LIST.length)],totpSecret,proxy:document.getElementById('p-proxy').value,notes:document.getElementById('p-notes').value.trim(),fingerprint:randomFingerprint(),color:COLORS[Math.floor(Math.random()*COLORS.length)],status:'idle',lastLogin:null,loginCount:0};if(totpSecret)state.totpKeys.push({id:Date.now().toString()+Math.random(),label:name,secret:totpSecret,profileId:p.id});state.profiles.push(p);persist();closeModal("modal-add-profile");syncProfileToBackend(profile);renderProfiles();renderTOTPList();renderDashboard();addLog('info',`Profile "${name}" created`);toast(`Profile "${name}" added ✓`,'success');}
+function deleteProfile(id){const p=state.profiles.find(x=>x.id===id);state.profiles=state.profiles.filter(x=>x.id!==id);persist();deleteProfileFromBackend(id);renderProfiles();renderDashboard();toast('Profile deleted','success');}
+function cloneProfile(id){const s=state.profiles.find(x=>x.id===id);if(!s)return;state.profiles.push({...s,id:Date.now().toString(),name:s.name+' (copy)',fingerprint:randomFingerprint(),status:'idle',lastLogin:null,loginCount:0});persist();renderProfiles();renderDashboard();toast('Cloned','success');}
+function launchProfile(id,silent=false){const p=state.profiles.find(x=>x.id===id);if(!p)return;p.status='launching';renderProfiles();const am=p.cookies&&p.cookies.length>10?'cookies':p.password?'password':'none';addLog('info',`Launching "${p.name}" [${am}${p.totpSecret?' +2FA':''}] → ${p.url}`);setTimeout(async()=>{let ok;if(backendConnected&&API_URL){try{const r=await fetch(API_URL+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profileId:p.id})});const d=await r.json();ok=d.success;}catch(e){ok=false;}}else{ok=am!=='none'?Math.random()>0.08:Math.random()>0.5;}p.status=ok?'active':'error';p.lastLogin=new Date().toLocaleString();if(ok){p.loginCount++;state.loginCount++;}persist();renderProfiles();renderDashboard();addLog(ok?'ok':'err',`"${p.name}" ${ok?'SUCCESS':'FAILED'}`);if(!silent)toast(`"${p.name}" ${ok?'launched ✓':'failed ✗'}`,ok?'success':'error');},1200+Math.random()*800);}
+function renderProfiles(){const g=document.getElementById('profile-grid');if(!state.profiles.length){g.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">👤</div><div class="empty-text">No profiles yet.</div><button class="btn btn-primary" onclick="openAddProfileModal()">+ Add Profile</button></div>';document.getElementById('profileCount').textContent='0 Profiles';return;}g.innerHTML=state.profiles.map(p=>{const sb={active:'<span class="badge badge-green">Active</span>',error:'<span class="badge badge-red">Error</span>',launching:'<span class="badge badge-yellow">Launching…</span>',idle:'<span class="badge badge-purple">Idle</span>'}[p.status]||'';const hc=p.cookies&&p.cookies.length>5,hp=p.password;const am=hc?'🍪 Cookies':hp?'🔑 Password':'⚠️ None';const tf=p.totpSecret?' 🔐':'';return `<div class="profile-card"><div class="profile-card-header"><div style="display:flex;align-items:center;gap:10px;"><div class="profile-avatar" style="background:${p.color}22;color:${p.color}">${p.name[0].toUpperCase()}</div><div><div class="profile-name">${p.name}</div><div class="profile-url">${p.url}</div></div></div>${sb}</div><div class="profile-meta"><div class="meta-row"><span>Platform</span><span class="meta-val">${p.platform}</span></div><div class="meta-row"><span>Auth</span><span class="meta-val">${am}${tf}</span></div><div class="meta-row"><span>Proxy</span><span class="meta-val">${p.proxy||'None'}</span></div><div class="meta-row"><span>Last Login</span><span class="meta-val">${p.lastLogin||'—'}</span></div><div class="meta-row"><span>Logins</span><span class="meta-val">${p.loginCount}</span></div></div><div class="profile-actions"><button class="btn btn-success btn-sm" onclick="launchProfile('${p.id}')">▶ Launch</button><button class="btn btn-ghost btn-sm" onclick="cloneProfile('${p.id}')">⧉</button><button class="btn btn-danger btn-sm" onclick="deleteProfile('${p.id}')">✕</button></div></div>`;}).join('');document.getElementById('profileCount').textContent=state.profiles.length+' Profile'+(state.profiles.length!==1?'s':'');}
+
+// AUTO-LOGIN
+function renderLoginQueue(){const q=document.getElementById('login-queue');if(!state.profiles.length){q.innerHTML='<div style="color:var(--muted);font-size:.82rem;">No profiles.</div>';return;}q.innerHTML=state.profiles.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface);border-radius:8px;border:1px solid var(--border);margin-bottom:8px;"><div style="display:flex;align-items:center;gap:10px;"><div style="width:28px;height:28px;border-radius:7px;background:${p.color}22;color:${p.color};display:grid;place-items:center;font-weight:700;font-size:.85rem;">${p.name[0].toUpperCase()}</div><div><div style="font-size:.85rem;font-weight:600;">${p.name}</div><div style="font-size:.75rem;color:var(--muted);">${p.url}</div></div></div><div style="display:flex;gap:8px;align-items:center;"><span style="font-size:.75rem;color:var(--muted);">${p.cookies?'🍪':p.password?'🔑':'⚠️'}${p.totpSecret?' 🔐':''}</span><button class="btn btn-success btn-sm" onclick="launchProfile('${p.id}')">Login</button></div></div>`).join('');}
+function runAllLogins(){if(!state.profiles.length){toast('No profiles','error');return;}const delay=parseInt(document.getElementById('setting-delay')?.value||1500);const r=document.getElementById('login-results');r.innerHTML='';addLog('info',`Running all ${state.profiles.length} logins…`);state.profiles.forEach((p,i)=>{setTimeout(async()=>{let ok;if(backendConnected&&API_URL){try{const r=await fetch(API_URL+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profileId:p.id})});const d=await r.json();ok=d.success;}catch(e){ok=false;}}else{ok=Math.random()>0.1;}p.status=ok?'active':'error';p.lastLogin=new Date().toLocaleString();if(ok){p.loginCount++;state.loginCount++;}persist();addLog(ok?'ok':'err',`"${p.name}" → ${ok?'SUCCESS':'FAILED'}`);r.innerHTML+=`<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface);border-radius:8px;border:1px solid ${ok?'#22c55e30':'#ef444430'};"><span style="color:${ok?'var(--green)':'var(--red)'}">${ok?'✓':'✗'}</span><span style="font-size:.83rem;font-weight:600;">${p.name}</span><span style="margin-left:auto;font-size:.75rem;color:${ok?'var(--green)':'var(--red)'};">${ok?'Logged in':'Failed'}</span></div>`;},i*delay);});toast('Queue started','success');}
+
+// FINGERPRINT
+let currentFP={};
+function randomFingerprint(){const s=['1920x1080','1440x900','2560x1440','1366x768','1280x800'],l=['en-US','en-GB','fr-FR','de-DE','es-ES','pt-BR'],t=['America/New_York','America/Chicago','America/Los_Angeles','Europe/London','Europe/Paris'],p=['Win32','MacIntel','Linux x86_64'];return{screen:s[Math.floor(Math.random()*s.length)],language:l[Math.floor(Math.random()*l.length)],timezone:t[Math.floor(Math.random()*t.length)],platform:p[Math.floor(Math.random()*p.length)],webgl:'NVIDIA GeForce '+['GTX 1060','RTX 3060','RTX 2070'][Math.floor(Math.random()*3)],canvas:'canvas_'+Math.random().toString(36).slice(2,10),fonts:Math.floor(Math.random()*50+200),audioCtx:(Math.random()*0.0001).toFixed(8),hardwareConcurrency:[2,4,6,8,12,16][Math.floor(Math.random()*6)],deviceMemory:[2,4,8,16][Math.floor(Math.random()*4)]};}
+function renderFingerprint(){currentFP=randomFingerprint();const g=document.getElementById('fp-grid');const r=[['Screen',currentFP.screen],['Language',currentFP.language],['Timezone',currentFP.timezone],['Platform',currentFP.platform],['WebGL',currentFP.webgl],['Canvas',currentFP.canvas],['Fonts',currentFP.fonts],['Audio FP',currentFP.audioCtx],['CPU Cores',currentFP.hardwareConcurrency],['RAM',currentFP.deviceMemory+' GB']];g.innerHTML=r.map(([l,v])=>`<div class="fp-row"><div class="fp-label">${l}</div><div class="fp-val">${v}</div></div>`).join('');document.getElementById('fp-profile-select').innerHTML='<option value="">-- Select --</option>'+state.profiles.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');}
+function randomizeFingerprint(){renderFingerprint();toast('Randomized ✓','success');}
+function loadProfileFingerprint(){const id=document.getElementById('fp-profile-select').value;if(!id){toast('Select first','error');return;}const p=state.profiles.find(x=>x.id===id);if(p?.fingerprint){currentFP={...p.fingerprint};renderFingerprint();toast('Loaded','success');}}
+function saveProfileFingerprint(){const id=document.getElementById('fp-profile-select').value;if(!id){toast('Select first','error');return;}const p=state.profiles.find(x=>x.id===id);if(p){p.fingerprint={...currentFP};persist();toast('Saved ✓','success');}}
+
+// PROXIES
+function openAddProxyModal(){['proxy-addr','proxy-user','proxy-pass','proxy-label'].forEach(id=>document.getElementById(id).value='');document.getElementById('modal-add-proxy').classList.add('open');}
+function saveProxy(){const a=document.getElementById('proxy-addr').value.trim();if(!a){toast('Address required','error');return;}state.proxies.push({id:Date.now().toString(),type:document.getElementById('proxy-type').value,addr:a,user:document.getElementById('proxy-user').value.trim(),pass:document.getElementById('proxy-pass').value,label:document.getElementById('proxy-label').value.trim()||a,status:'untested'});persist();closeModal("modal-add-proxy");syncProxyToBackend(state.proxies[state.proxies.length-1]);renderProxies();renderDashboard();toast('Proxy added ✓','success');}
+function deleteProxy(id){state.proxies=state.proxies.filter(x=>x.id!==id);persist();renderProxies();renderDashboard();toast('Removed','success');}
+function testProxy(id){const p=state.proxies.find(x=>x.id===id);if(!p)return;p.status='testing';renderProxies();setTimeout(()=>{p.status=Math.random()>0.2?'ok':'fail';p.latency=Math.floor(Math.random()*200+50);persist();renderProxies();toast(p.status==='ok'?'Online ✓':'Failed ✗',p.status==='ok'?'success':'error');},1200);}
+function renderProxies(){const l=document.getElementById('proxy-list');if(!state.proxies.length){l.innerHTML='<div class="empty-state"><div class="empty-icon">🌐</div><div class="empty-text">No proxies.</div><button class="btn btn-primary" onclick="openAddProxyModal()">+ Add Proxy</button></div>';return;}l.innerHTML=state.proxies.map(p=>{const b={ok:`<span class="badge badge-green">Online · ${p.latency}ms</span>`,fail:'<span class="badge badge-red">Failed</span>',testing:'<span class="badge badge-yellow">Testing…</span>'}[p.status]||'<span class="badge" style="background:var(--border)20;color:var(--muted)">Untested</span>';return `<div class="proxy-item"><div><div style="font-family:monospace;font-size:.85rem;">${p.type} · ${p.addr}</div><div style="font-size:.78rem;color:var(--muted);margin-top:3px;">${p.label}${p.user?' · '+p.user:''}</div></div><div style="display:flex;gap:8px;align-items:center;">${b}<button class="btn btn-ghost btn-sm" onclick="testProxy('${p.id}')">Test</button><button class="btn btn-danger btn-sm" onclick="deleteProxy('${p.id}')">✕</button></div></div>`;}).join('');renderProxyOptions();}
+function renderProxyOptions(){const s=document.getElementById('p-proxy');if(!s)return;s.innerHTML='<option value="">None</option>'+state.proxies.map(p=>`<option value="${p.addr}">${p.label} (${p.addr})</option>`).join('');}
+
+// DASHBOARD
+function renderDashboard(){document.getElementById('stat-total').textContent=state.profiles.length;document.getElementById('stat-active').textContent=state.profiles.filter(p=>p.status==='active').length;document.getElementById('stat-schedules').textContent=state.schedules.length;document.getElementById('stat-totp').textContent=state.totpKeys.length;document.getElementById('stat-logins').textContent=state.loginCount;const ql=document.getElementById('quick-launch-list');if(!state.profiles.length){ql.innerHTML='<div class="empty-state" style="padding:20px"><div class="empty-icon">🚀</div><div class="empty-text">Add profiles to see quick launch</div></div>';}else{ql.innerHTML=state.profiles.slice(0,6).map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface);border-radius:8px;border:1px solid var(--border);margin-bottom:8px;"><div style="display:flex;align-items:center;gap:10px;"><div style="width:28px;height:28px;border-radius:7px;background:${p.color}22;color:${p.color};display:grid;place-items:center;font-weight:700;font-size:.85rem;">${p.name[0].toUpperCase()}</div><div><div style="font-size:.85rem;font-weight:600;">${p.name}</div><div style="font-size:.75rem;color:var(--muted);">${p.platform}</div></div></div><button class="btn btn-success btn-sm" onclick="launchProfile('${p.id}')">▶</button></div>`).join('');}}
+
+// LOGS
+function addLog(type,msg){state.logs.unshift({type,msg,time:new Date().toLocaleTimeString()});const el=document.getElementById('log-container');if(!el)return;el.innerHTML=state.logs.slice(0,300).map(l=>{const cls={ok:'log-ok',err:'log-err',warn:'log-warn',info:'log-info'}[l.type]||'log-info';const pf={ok:'[✓]',err:'[✗]',warn:'[!]',info:'[i]'}[l.type]||'[i]';return `<div class="log-line"><span class="log-time">${l.time}</span><span class="${cls}">${pf}</span>${l.msg}</div>`;}).join('');}
+function clearLogs(){state.logs=[];addLog('info','Log cleared');toast('Cleared','success');}
+
+// EXPORT/IMPORT
+function exportAll(){const b=new Blob([JSON.stringify({profiles:state.profiles,proxies:state.proxies,schedules:state.schedules,totpKeys:state.totpKeys},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='phantom_export.json';a.click();toast('Exported ✓','success');}
+function importAll(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d.profiles)state.profiles.push(...d.profiles);if(d.proxies)state.proxies.push(...d.proxies);if(d.schedules)state.schedules.push(...d.schedules);if(d.totpKeys)state.totpKeys.push(...d.totpKeys);persist();renderProfiles();renderDashboard();renderSchedules();renderTOTPList();toast('Imported ✓','success');}catch{toast('Invalid JSON','error');}};r.readAsText(f);input.value='';}
+
+// UTILS
+function persist(){localStorage.setItem('ph_profiles',JSON.stringify(state.profiles));localStorage.setItem('ph_proxies',JSON.stringify(state.proxies));localStorage.setItem('ph_schedules',JSON.stringify(state.schedules));localStorage.setItem('ph_totp',JSON.stringify(state.totpKeys));}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function switchTab(name,el){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.sidebar-item').forEach(s=>s.classList.remove('active'));document.getElementById('tab-'+name).classList.add('active');el.classList.add('active');if(name==='profiles')renderProfiles();if(name==='dashboard')renderDashboard();if(name==='autologin')renderLoginQueue();if(name==='fingerprint')renderFingerprint();if(name==='proxies')renderProxies();if(name==='totp')renderTOTPList();if(name==='schedule')renderSchedules();if(window.innerWidth<=768)document.querySelector('.sidebar').classList.remove('open');}
+function toast(msg,type='success'){const el=document.createElement('div');el.className='toast '+type;el.innerHTML=`<span>${type==='success'?'✓':'✗'}</span><span>${msg}</span>`;document.getElementById('toast-container').appendChild(el);setTimeout(()=>el.remove(),3000);}
+function updateClock(){document.getElementById('clock').textContent=new Date().toLocaleTimeString();}
+setInterval(updateClock,1000);updateClock();
+
+// INIT
+renderDashboard();renderFingerprint();renderProfiles();renderTOTPList();renderSchedules();renderProxies();document.getElementById("setting-apiUrl").value = API_URL; if (API_URL) testBackendConnection(); addLog("info","Phantom Antidetect v2 initialized");
+state.schedules.forEach(s=>{if(s.status==='active')startScheduleTimer(s);});
+</script>
+</body>
+</html>

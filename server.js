@@ -45,6 +45,16 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 
+// Serve dashboard from public directory
+import { fileURLToPath as __ftu } from 'url';
+const __basedir = path.dirname(fileURLToPath(import.meta.url));
+app.use(express.static(path.join(__basedir, 'public')));
+
+// Dashboard route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__basedir, 'public', 'index.html'));
+});
+
 // ─── DATABASE ─────────────────────────────────────────────────────────────
 const defaultData = { profiles: [], proxies: [], schedules: [], totpKeys: [], logs: [] };
 const db = await JSONFilePreset(path.join(__dirname, 'data', 'db.json'), defaultData);
