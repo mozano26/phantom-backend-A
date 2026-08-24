@@ -284,13 +284,39 @@ async function launchProfileLogin(profileId) {
     logEvent('info', `Profile "${profile.name}" — cookie login ${loginSuccess ? 'SUCCESS' : 'FAILED (login form detected)'}`);
   }
 
+  // Helper: click the first VISIBLE element matching any of the given selectors.
+  // Sites often have hidden legacy/duplicate elements that match a selector but can
+  // never be clicked, which causes Playwright to hang waiting for visibility.
+  async function clickFirstVisible(selectors, timeout = 4000) {
+    for (const sel of selectors) {
+      const els = await page.locator(sel).all();
+      for (const el of els) {
+        try {
+          if (await el.isVisible()) {
+            await el.click({ timeout });
+            return sel;
+          }
+        } catch { /* not clickable, try next */ }
+      }
+    }
+    return null;
+  }
+
   // Fallback to username/password if cookies failed
   if (!loginSuccess && profile.username && profile.password) {
     logEvent('info', `Profile "${profile.name}" — attempting password login...`);
     try {
-      // Wait for the page to actually load form elements
-      const userSelectors = ['input[type="email"]', 'input[name="email"]', 'input[name="username"]', 'input[name="user"]', 'input[autocomplete="username"]', '#username', '#email'];
+      // Broad selector list — covers Google's identifierId/identifier naming,
+      // generic email/username/text inputs, and aria-label based fields
+      const userSelectors = [
+        '#identifierId', 'input[name="identifier"]',
+        'input[type="email"]', 'input[name="email"]', 'input[name="username"]', 'input[name="user"]',
+        'input[autocomplete="username"]', 'input[autocomplete="email"]',
+        '#username', '#email',
+        'input[aria-label*="email" i]', 'input[aria-label*="phone" i]', 'input[aria-label*="username" i]'
+      ];
       const passSelectors = ['input[type="password"]', 'input[name="password"]', '#password'];
+      const nextSelectors = ['button:has-text("Next")', 'button:has-text("Continue")', '#identifierNext', 'input[type="submit"][value="Next"]'];
 
       // Wait up to 10 seconds for any username field to appear
       let userFilled = false;
@@ -310,34 +336,40 @@ async function launchProfileLogin(profileId) {
       }
 
       if (userFilled) {
+        // Check if the password field is already on this page (single-page login form)
+        let passVisible = await page.locator(passSelectors.join(', ')).first().isVisible().catch(() => false);
+
+        // Multi-step login (Google, Yahoo, etc.): email page → click Next → password page
+        if (!passVisible) {
+          const nextClicked = await clickFirstVisible(nextSelectors, 4000);
+          if (nextClicked) {
+            logEvent('info', `Profile "${profile.name}" — multi-step login detected, clicked "${nextClicked}" to advance`);
+            await page.waitForTimeout(1200);
+          } else {
+            // No visible Next button — try pressing Enter to advance to step 2
+            try { await page.locator(userSelectors.join(', ')).first().press('Enter'); await page.waitForTimeout(1200); } catch {}
+          }
+        }
+
+        let passFilled = false;
         for (const sel of passSelectors) {
           try {
-            await page.waitForSelector(sel, { timeout: 3000 });
+            await page.waitForSelector(sel, { timeout: 5000 });
             const el = page.locator(sel).first();
             await el.fill(profile.password);
+            passFilled = true;
             logEvent('info', `Profile "${profile.name}" — found password field: ${sel}`);
             break;
           } catch { /* try next selector */ }
         }
-
-        // Submit — only click VISIBLE buttons (sites often have hidden legacy submit
-        // inputs in the DOM that match a selector but can never be clicked, causing a hang)
-        const submitSelectors = ['button[type="submit"]', 'button[name="login"]', 'input[type="submit"]', 'button:has-text("Sign in")', 'button:has-text("Log in")', 'button:has-text("Login")'];
-        let clicked = false;
-        for (const sel of submitSelectors) {
-          const els = await page.locator(sel).all();
-          for (const el of els) {
-            try {
-              if (await el.isVisible()) {
-                await el.click({ timeout: 4000 });
-                clicked = true;
-                logEvent('info', `Profile "${profile.name}" — clicked submit button: ${sel}`);
-                break;
-              }
-            } catch { /* not clickable, try next */ }
-          }
-          if (clicked) break;
+        if (!passFilled) {
+          logEvent('err', `Profile "${profile.name}" — could not find password field (multi-step navigation may have failed)`);
         }
+
+        // Submit — only click VISIBLE buttons
+        const submitSelectors = ['button[type="submit"]', 'button[name="login"]', '#passwordNext', 'input[type="submit"]', 'button:has-text("Sign in")', 'button:has-text("Log in")', 'button:has-text("Login")', 'button:has-text("Next")'];
+        const clicked = await clickFirstVisible(submitSelectors, 4000);
+        if (clicked) logEvent('info', `Profile "${profile.name}" — clicked submit button: ${clicked}`);
         // Fallback: press Enter on the password field — submits most login forms
         if (!clicked) {
           logEvent('info', `Profile "${profile.name}" — no visible submit button found, pressing Enter instead`);
@@ -346,7 +378,7 @@ async function launchProfileLogin(profileId) {
           } catch { /* ignore */ }
         }
 
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
 
         // Handle 2FA/TOTP if needed
         if (profile.totpSecret) {
