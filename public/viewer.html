@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <!-- psd.js for PSD -->
-<script src="https://cdn.jsdelivr.net/npm/psd@3.0.1/dist/psd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js"></script>
 <!-- Marked for any markdown -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
 
@@ -619,51 +619,86 @@ async function renderPPTX(entry, container){
   showMetadata(entry);
 }
 
-// ─── ZIP ───
+// ─── ZIP (clickable entries — extracts and previews files inside) ───
 async function renderZIP(entry, container){
   const arrayBuffer = await entry.file.arrayBuffer();
   const zip = await JSZip.loadAsync(arrayBuffer);
   const entries = Object.values(zip.files);
   const div = document.createElement('div');
   div.className = 'zip-viewer';
+  
+  const header = document.createElement('div');
+  header.style.cssText = 'font-size:13px;color:var(--muted);margin-bottom:12px;text-align:center;';
+  header.textContent = 'Click a file inside the ZIP to preview it';
+  div.appendChild(header);
+  
   const tree = document.createElement('div');
   tree.className = 'zip-tree';
-  entries.forEach(f=>{
+  
+  for(const f of entries){
+    if(f.dir) continue;
     const item = document.createElement('div');
     item.className = 'zip-entry';
-    item.innerHTML = `<span class="zi">${f.dir?'📂':'📄'}</span><span>${f.name}</span>${!f.dir?`<span class="zs">${formatSize(f._data?._compressedSize||0)}</span>`:''}`;
+    item.style.cursor = 'pointer';
+    const ext = getExt(f.name);
+    const isPreviewable = IMAGE_EXTS.has(ext) || ['pdf','txt','csv','json','js','ts','py','html','css','xml','md'].includes(ext);
+    item.innerHTML = `<span class="zi">${FILE_ICONS[ext]||'📄'}</span><span>${f.name}</span><span class="zs">${formatSize(f._data?._data?._compressedSize||f._data?.uncompressedSize||0)}</span>${isPreviewable?'<span style="color:var(--accent);font-size:10px;margin-left:8px;">▶ preview</span>':''}`;
+    if(isPreviewable){
+      item.onclick = async ()=>{
+        const blob = await f.async('blob');
+        const extractedFile = new File([blob], f.name, {type: blob.type});
+        handleFiles([extractedFile]);
+      };
+    }
     tree.appendChild(item);
-  });
+  }
+  
   div.appendChild(tree);
   entry.metadata.entries = entries.length+' items';
   entry.metadata.fileCount = entries.filter(f=>!f.dir).length+' files';
+  entry.metadata.fileList = entries.filter(f=>!f.dir).map(f=>f.name).join(', ');
   container.appendChild(div);
   showMetadata(entry);
 }
 
-// ─── PSD ───
+// ─── PSD (uses ag-psd which works in browser) ───
 async function renderPSD(entry, container){
   const arrayBuffer = await entry.file.arrayBuffer();
-  const psd = await PSD.parse(arrayBuffer);
+  const psd = agPsd.readPsd(arrayBuffer);
   const div = document.createElement('div');
   div.className = 'psd-viewer';
-  const canvas = psd.toCanvas ? psd.toCanvas() : null;
-  if(canvas){
-    container.appendChild(canvas);
+  
+  // ag-psd returns a canvas with the merged preview
+  if(psd.canvas){
+    const c = psd.canvas;
+    c.style.maxWidth = '100%';
+    c.style.borderRadius = '8px';
+    c.style.boxShadow = '0 8px 32px rgba(0,0,0,.4)';
+    div.appendChild(c);
   } else {
-    // Try rendering via the PSD object
+    // Manual composite from children
     const c = document.createElement('canvas');
-    if(psd.width&&psd.height){
-      c.width = psd.width;
-      c.height = psd.height;
-      const ctx = c.getContext('2d');
-      if(psd.imageData) ctx.putImageData(psd.imageData,0,0);
-      else ctx.fillStyle='#333';ctx.fillRect(0,0,c.width,c.height);
-    }
-    container.appendChild(c);
+    c.width = psd.width || 800;
+    c.height = psd.height || 600;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#1a1a24';
+    ctx.fillRect(0,0,c.width,c.height);
+    div.appendChild(c);
   }
-  entry.metadata.psdWidth = psd.width+'px';
-  entry.metadata.psdHeight = psd.height+'px';
+  
+  // Show layer info
+  if(psd.children && psd.children.length){
+    const layerInfo = document.createElement('div');
+    layerInfo.style.cssText = 'font-size:12px;color:var(--muted);text-align:center;margin-top:8px;';
+    layerInfo.textContent = psd.children.length + ' layers';
+    div.appendChild(layerInfo);
+  }
+  
+  container.appendChild(div);
+  entry.metadata.psdWidth = (psd.width||'?')+'px';
+  entry.metadata.psdHeight = (psd.height||'?')+'px';
+  entry.metadata.psdLayers = (psd.children?psd.children.length:0)+' layers';
+  entry.metadata.psdChannels = psd.channels || '—';
   showMetadata(entry);
 }
 
