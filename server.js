@@ -214,6 +214,20 @@ async function launchProfileLogin(profileId) {
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-blink-features=AutomationControlled',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--disable-extensions',
+      '--disable-images',
+      '--disable-plugins',
+      '--disable-notifications',
+      '--no-first-run',
+      '--disable-background-networking',
+      '--disable-sync',
+      '--disable-translate',
+      '--disable-default-apps',
+      '--disable-popup-blocking',
+      '--metrics-recording-only',
+      '--disable-component-extensions-with-background-pages',
     ],
   };
   if (proxyConfig) launchOptions.proxy = proxyConfig;
@@ -246,14 +260,24 @@ async function launchProfileLogin(profileId) {
 
   const page = await context.newPage();
 
+  // Block unnecessary resources for faster page loads
+  await page.route('**/*', (route) => {
+    const type = route.request().resourceType();
+    if (type === 'image' || type === 'media' || type === 'font') {
+      route.abort();
+    } else {
+      route.continue();
+    }
+  });
+
   // Navigate to target URL
-  await page.goto(profile.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.goto(profile.url, { waitUntil: 'commit', timeout: 15000 });
 
   let loginSuccess = false;
 
   // If cookies were injected, check if we're already logged in
   if (cookies.length > 0) {
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(800);
     // Heuristic: if no login form visible, cookies worked
     const hasLoginForm = await page.locator('input[type="password"]').count();
     loginSuccess = hasLoginForm === 0;
@@ -294,7 +318,7 @@ async function launchProfileLogin(profileId) {
           if (await el.count() > 0) { await el.click(); break; }
         }
 
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(1000);
 
         // Handle 2FA/TOTP if needed
         if (profile.totpSecret) {
@@ -305,7 +329,7 @@ async function launchProfileLogin(profileId) {
             await totpInput.fill(code);
             const verifyBtn = page.locator('button[type="submit"], button:has-text("Verify"), button:has-text("Continue")').first();
             if (await verifyBtn.count() > 0) await verifyBtn.click();
-            await page.waitForTimeout(2000);
+            await page.waitForTimeout(1000);
           }
         }
 
@@ -359,7 +383,7 @@ function runScheduledLogins(scheduleId) {
     setTimeout(async () => {
       try { await launchProfileLogin(pid); }
       catch (e) { logEvent('err', `Schedule login error: ${e.message}`); }
-    }, i * 2000);
+    }, i * 1000);
   });
 }
 
@@ -429,16 +453,24 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/login/all', async (req, res) => {
+  const delay = req.body.delay || 1000;
+  const concurrency = Math.min(req.body.concurrency || 3, 5); // Max 5 parallel logins
+  const profiles = [...db.data.profiles];
   const results = [];
-  const delay = req.body.delay || 2000;
-  for (const p of db.data.profiles) {
-    try {
-      const r = await launchProfileLogin(p.id);
-      results.push(r);
-    } catch (e) {
-      results.push({ success: false, profile: p.name, error: e.message });
+  
+  // Process in batches for concurrency
+  for (let i = 0; i < profiles.length; i += concurrency) {
+    const batch = profiles.slice(i, i + concurrency);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (p) => {
+        try { return await launchProfileLogin(p.id); }
+        catch (e) { return { success: false, profile: p.name, error: e.message }; }
+      })
+    );
+    results.push(...batchResults.map(r => r.value || r.reason));
+    if (i + concurrency < profiles.length) {
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-    await new Promise(resolve => setTimeout(resolve, delay));
   }
   res.json(results);
 });
@@ -558,7 +590,7 @@ registerSchedules();
 app.listen(PORT, () => {
   console.log(`
   ╔══════════════════════════════════════════════╗
-  ║  👤 Phantom Antidetect Backend v2            ║
+  ║  👤 Phantom Antidetect Backend v2.1 (Fast)   ║
   ║  Running on http://localhost:${PORT}          ║
   ║                                              ║
   ║  • Playwright browser automation ✓           ║

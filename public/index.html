@@ -101,12 +101,37 @@
   </style>
 </head>
 <body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:40px;width:360px;max-width:90vw;text-align:center;">
+    <div style="width:56px;height:56px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:14px;display:grid;place-items:center;font-size:1.8rem;margin:0 auto 20px;">👤</div>
+    <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:6px;">Phantom Antidetect</h2>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:24px;" id="login-subtitle">Enter your password to access the dashboard</p>
+    
+    <div id="login-input-area" style="display:none;">
+      <input type="password" id="login-password" class="form-input" style="text-align:center;font-size:1.1rem;margin-bottom:16px;" placeholder="••••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+      <button class="btn btn-primary" style="width:100%;padding:12px;font-size:.95rem;" onclick="doLogin()">Unlock →</button>
+      <p id="login-error" style="color:var(--red);font-size:.8rem;margin-top:12px;display:none;">Wrong password. Try again.</p>
+    </div>
+    
+    <div id="login-setup-area" style="display:none;">
+      <input type="password" id="setup-password" class="form-input" style="text-align:center;font-size:1.1rem;margin-bottom:12px;" placeholder="Create a password" onkeydown="if(event.key==='Enter')doSetup()">
+      <input type="password" id="setup-password2" class="form-input" style="text-align:center;font-size:1.1rem;margin-bottom:16px;" placeholder="Confirm password" onkeydown="if(event.key==='Enter')doSetup()">
+      <button class="btn btn-primary" style="width:100%;padding:12px;font-size:.95rem;" onclick="doSetup()">Set Password →</button>
+      <p id="setup-error" style="color:var(--red);font-size:.8rem;margin-top:12px;display:none;"></p>
+    </div>
+    
+    <p style="font-size:.72rem;color:var(--muted);margin-top:20px;">🔒 Password stored locally in your browser</p>
+  </div>
+</div>
+
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:10px;">
     <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
     <div class="logo"><div class="logo-icon">👤</div><span>Phantom</span><span style="font-size:.68rem;color:var(--muted);font-weight:400;margin-left:4px;">v2</span></div>
   </div>
-  <div class="status-bar">
+  <div class="status-bar"><button class="btn btn-ghost btn-sm" onclick="logout()" style="margin-right:8px;">🔒 Lock</button>
     <span id="backend-status"><span class="status-dot"></span>Local Mode</span>
     <span id="profileCount">0 Profiles</span>
     <span id="clock"></span>
@@ -278,6 +303,57 @@
 // === BACKEND CONNECTION ===
 let API_URL = localStorage.getItem('ph_api_url') || (window.location.origin.startsWith('https://phantom-backend') ? window.location.origin : 'https://phantom-backend-production-dfe6.up.railway.app');
 let backendConnected = false;
+
+// === LOGIN SCREEN ===
+function simpleHash(str){let h=0;for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h|=0;}return h.toString(36);}
+function initLoginScreen(){
+  const storedHash=localStorage.getItem('ph_login_hash');
+  if(!storedHash){
+    // First time — show setup
+    document.getElementById('login-subtitle').textContent='Create a password to protect your dashboard';
+    document.getElementById('login-setup-area').style.display='block';
+    document.getElementById('login-input-area').style.display='none';
+    document.getElementById('setup-password').focus();
+  } else {
+    document.getElementById('login-input-area').style.display='block';
+    document.getElementById('login-password').focus();
+  }
+}
+function doSetup(){
+  const p1=document.getElementById('setup-password').value;
+  const p2=document.getElementById('setup-password2').value;
+  const err=document.getElementById('setup-error');
+  if(!p1||p1.length<4){err.textContent='Password must be at least 4 characters';err.style.display='block';return;}
+  if(p1!==p2){err.textContent='Passwords do not match';err.style.display='block';return;}
+  localStorage.setItem('ph_login_hash',simpleHash(p1));
+  document.getElementById('login-screen').style.display='none';
+  toast('Password set — dashboard unlocked ✓','success');
+}
+function doLogin(){
+  const pw=document.getElementById('login-password').value;
+  const storedHash=localStorage.getItem('ph_login_hash');
+  if(simpleHash(pw)===storedHash){
+    sessionStorage.setItem('ph_unlocked','true');
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('login-password').value='';
+    toast('Welcome back ✓','success');
+  } else {
+    document.getElementById('login-error').style.display='block';
+    document.getElementById('login-password').value='';
+    setTimeout(()=>document.getElementById('login-error').style.display='none',3000);
+  }
+}
+function logout(){
+  sessionStorage.removeItem('ph_unlocked');
+  location.reload();
+}
+// Check if already unlocked this session
+if(!sessionStorage.getItem('ph_unlocked')){
+  initLoginScreen();
+} else {
+  document.getElementById('login-screen').style.display='none';
+}
+
 
 function saveApiUrl(){
   API_URL = document.getElementById('setting-apiUrl').value.trim();
