@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phantom File Viewer</title>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- mammoth.js for DOCX -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<!-- SheetJS for XLSX -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- JSZip for ZIP -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- highlight.js for code files -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<!-- psd.js for PSD -->
+<script src="https://cdn.jsdelivr.net/npm/psd@3.0.1/dist/psd.min.js"></script>
+<!-- Marked for any markdown -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0f0f14;--surface:#1a1a24;--surface2:#22222e;--border:#33333f;
+  --text:#e4e4e7;--muted:#8b8b96;--accent:#6366f1;--accent2:#818cf8;
+  --danger:#ef4444;--success:#22c55e;--radius:10px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --mono:'SF Mono','Fira Code','Cascadia Code',Consolas,monospace;
+}
+html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--text);overflow:hidden;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+::-webkit-scrollbar-thumb:hover{background:#44444f;}
+
+.app{display:grid;grid-template-columns:340px 1fr;height:100vh;}
+
+/* ─── Sidebar ─── */
+.sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.sidebar-header{padding:18px 20px;border-bottom:1px solid var(--border);}
+.sidebar-header h1{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.sidebar-header h1 .logo{width:28px;height:28px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+.sidebar-header p{font-size:12px;color:var(--muted);margin-top:4px;}
+
+.search-box{padding:12px 16px;border-bottom:1px solid var(--border);}
+.search-box input{width:100%;padding:9px 12px 9px 36px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;transition:border-color .2s;}
+.search-box input:focus{border-color:var(--accent);}
+.search-box{position:relative;}
+.search-box .search-icon{position:absolute;left:28px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none;}
+
+.file-list{flex:1;overflow-y:auto;padding:8px;}
+.file-list:empty::after{content:'No files uploaded yet';display:block;text-align:center;color:var(--muted);font-size:13px;padding:40px 20px;}
+
+.file-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background .15s;margin-bottom:2px;}
+.file-item:hover{background:var(--surface2);}
+.file-item.active{background:var(--surface2);box-shadow:inset 3px 0 0 var(--accent);}
+.file-item .thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:18px;}
+.file-item .thumb img{width:100%;height:100%;border-radius:8px;object-fit:cover;}
+.file-item .meta{flex:1;min-width:0;}
+.file-item .meta .name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.file-item .meta .info{font-size:11px;color:var(--muted);margin-top:2px;}
+.file-item .delete-btn{opacity:0;background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;border-radius:4px;font-size:14px;transition:opacity .15s,color .15s;}
+.file-item:hover .delete-btn{opacity:1;}
+.file-item .delete-btn:hover{color:var(--danger);}
+
+.sidebar-footer{padding:12px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);display:flex;justify-content:space-between;}
+
+/* ─── Dropzone / Main Area ─── */
+.main{display:flex;flex-direction:column;overflow:hidden;position:relative;}
+.dropzone{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;transition:background .2s;}
+.dropzone.dragover{background:rgba(99,102,241,.06);}
+.dropzone.has-file{display:none;}
+.dropzone-content{text-align:center;max-width:420px;}
+.dropzone-icon{width:80px;height:80px;margin:0 auto 20px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:24px;display:flex;align-items:center;justify-content:center;font-size:36px;}
+.dropzone h2{font-size:22px;font-weight:700;margin-bottom:8px;}
+.dropzone p{color:var(--muted);font-size:14px;margin-bottom:24px;line-height:1.5;}
+.dropzone .formats{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:380px;margin:0 auto;}
+.dropzone .format-tag{padding:4px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--muted);}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;padding:10px 24px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s;}
+.btn-primary:hover{opacity:.9;}
+.btn-ghost{padding:8px 16px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;font-size:13px;cursor:pointer;transition:background .15s;}
+.btn-ghost:hover{background:var(--surface2);}
+
+/* ─── Toolbar ─── */
+.toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);min-height:52px;}
+.toolbar .file-name{font-size:14px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.toolbar .file-name .ext-badge{display:inline-block;padding:2px 8px;background:var(--accent);color:#fff;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;margin-left:8px;vertical-align:middle;}
+.toolbar button{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 12px;font-size:13px;cursor:pointer;transition:background .15s;display:inline-flex;align-items:center;gap:6px;}
+.toolbar button:hover{background:#2e2e3a;}
+.toolbar button:disabled{opacity:.4;cursor:default;}
+
+/* ─── Viewer ─── */
+.viewer{flex:1;overflow:auto;position:relative;display:none;}
+.viewer.active{display:block;}
+.viewer-content{min-height:100%;display:flex;flex-direction:column;align-items:center;padding:24px;}
+
+/* Zoom controls floating */
+.zoom-controls{position:fixed;bottom:20px;right:24px;display:flex;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px;z-index:100;box-shadow:0 4px 20px rgba(0,0,0,.3);}
+.zoom-controls button{background:var(--surface2);border:none;color:var(--text);width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:background .15s;}
+.zoom-controls button:hover{background:#2e2e3a;}
+.zoom-controls .zoom-level{color:var(--muted);font-size:12px;padding:0 8px;display:flex;align-items:center;min-width:48px;justify-content:center;}
+
+/* Image viewer */
+.img-viewer{display:flex;align-items:center;justify-content:center;width:100%;height:100%;overflow:auto;}
+.img-viewer img{border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.4);transition:transform .15s ease-out;}
+
+/* Video viewer */
+.video-viewer{display:flex;flex-direction:column;align-items:center;gap:16px;}
+.video-viewer video{max-width:100%;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.4);}
+
+/* Audio viewer */
+.audio-viewer{display:flex;flex-direction:column;align-items:center;gap:20px;padding:40px;}
+.audio-viewer .audio-icon{width:100px;height:100px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:28px;display:flex;align-items:center;justify-content:center;font-size:48px;}
+.audio-viewer audio{width:100%;max-width:480px;}
+
+/* PDF viewer */
+.pdf-viewer{display:flex;flex-direction:column;align-items:center;gap:12px;}
+.pdf-viewer canvas{border-radius:6px;box-shadow:0 4px 20px rgba(0,0,0,.3);}
+
+/* Code viewer */
+.code-viewer{width:100%;max-width:1100px;}
+.code-viewer pre{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;overflow-x:auto;font-size:13px;line-height:1.6;}
+.code-viewer code{font-family:var(--mono);}
+.code-viewer pre.hljs{background:var(--surface);}
+
+/* TXT viewer */
+.txt-viewer{width:100%;max-width:900px;}
+.txt-viewer pre{white-space:pre-wrap;word-wrap:break-word;font-family:var(--mono);font-size:13px;line-height:1.7;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;}
+
+/* CSV viewer */
+.csv-viewer{width:100%;max-width:1100px;overflow-x:auto;}
+.csv-viewer table{border-collapse:collapse;width:100%;font-size:13px;}
+.csv-viewer th,.csv-viewer td{border:1px solid var(--border);padding:8px 12px;text-align:left;white-space:nowrap;}
+.csv-viewer th{background:var(--surface2);font-weight:600;color:var(--accent2);}
+.csv-viewer tr:nth-child(even){background:rgba(255,255,255,.02);}
+
+/* ZIP viewer */
+.zip-viewer{width:100%;max-width:700px;}
+.zip-viewer .zip-tree{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;}
+.zip-viewer .zip-entry{padding:6px 8px;font-size:13px;display:flex;align-items:center;gap:8px;border-radius:4px;}
+.zip-viewer .zip-entry:hover{background:var(--surface2);}
+.zip-viewer .zip-entry .zi{font-size:16px;}
+.zip-viewer .zip-entry .zs{margin-left:auto;color:var(--muted);font-size:11px;}
+
+/* XLSX viewer */
+.xlsx-viewer{width:100%;max-width:1100px;overflow-x:auto;}
+.xlsx-viewer .sheet-tabs{display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;}
+.xlsx-viewer .sheet-tab{padding:6px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px 6px 0 0;font-size:12px;cursor:pointer;color:var(--muted);}
+.xlsx-viewer .sheet-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.xlsx-viewer table{border-collapse:collapse;width:100%;font-size:12px;}
+.xlsx-viewer th,.xlsx-viewer td{border:1px solid var(--border);padding:6px 10px;text-align:left;white-space:nowrap;max-width:300px;overflow:hidden;text-overflow:ellipsis;}
+.xlsx-viewer th{background:var(--surface2);font-weight:600;}
+.xlsx-viewer tr:nth-child(even){background:rgba(255,255,255,.02);}
+
+/* DOCX viewer */
+.docx-viewer{width:100%;max-width:800px;background:#fff;color:#1a1a1a;border-radius:10px;padding:40px 60px;min-height:600px;box-shadow:0 8px 32px rgba(0,0,0,.4);line-height:1.7;font-size:15px;}
+.docx-viewer h1,.docx-viewer h2,.docx-viewer h3{margin:16px 0 8px;}
+.docx-viewer p{margin:8px 0;}
+.docx-viewer img{max-width:100%;border-radius:8px;}
+.docx-viewer table{border-collapse:collapse;width:100%;}
+.docx-viewer th,.docx-viewer td{border:1px solid #ddd;padding:8px;}
+
+/* PSD viewer */
+.psd-viewer{display:flex;flex-direction:column;align-items:center;gap:16px;}
+.psd-viewer canvas{border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.4);max-width:100%;}
+
+/* PPTX viewer */
+.pptx-viewer{width:100%;max-width:960px;}
+.pptx-viewer .slide{background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.4);margin-bottom:16px;overflow:hidden;position:relative;}
+.pptx-viewer .slide-placeholder{padding:60px 40px;text-align:center;color:#666;font-size:14px;}
+
+/* Metadata panel */
+.metadata-panel{position:fixed;top:52px;right:0;width:300px;height:calc(100vh - 52px);background:var(--surface);border-left:1px solid var(--border);padding:20px;overflow-y:auto;transform:translateX(100%);transition:transform .25s;z-index:50;}
+.metadata-panel.open{transform:translateX(0);}
+.metadata-panel h3{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;}
+.metadata-panel h3 button{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;}
+.metadata-panel .field{margin-bottom:14px;}
+.metadata-panel .field .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.metadata-panel .field .value{font-size:13px;word-break:break-all;}
+
+/* Empty state */
+.viewer-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px;}
+
+/* Responsive */
+@media (max-width:768px){
+  .app{grid-template-columns:1fr;}
+  .sidebar{position:fixed;left:0;top:0;bottom:0;width:300px;z-index:200;transform:translateX(-100%);transition:transform .25s;}
+  .sidebar.open{transform:translateX(0);}
+  .sidebar-toggle{display:flex!important;}
+  .viewer-content{padding:12px;}
+}
+.sidebar-toggle{display:none;position:fixed;top:12px;left:12px;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;color:var(--text);font-size:16px;}
+</style>
+</head>
+<body>
+
+<div class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</div>
+
+<div class="app">
+  <!-- ─── Sidebar ─── -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1><span class="logo">👁</span> Phantom Viewer</h1>
+      <p>All-in-one file preview & metadata</p>
+    </div>
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="Search files…" oninput="filterFiles()">
+    </div>
+    <div class="file-list" id="fileList"></div>
+    <div class="sidebar-footer">
+      <span id="fileCount">0 files</span>
+      <span id="totalSize">0 B</span>
+    </div>
+  </div>
+
+  <!-- ─── Main Area ─── -->
+  <div class="main">
+    <!-- Dropzone (shown when no file selected) -->
+    <div class="dropzone" id="dropzone">
+      <div class="dropzone-content">
+        <div class="dropzone-icon">📁</div>
+        <h2>Drop files to preview</h2>
+        <p>Drag & drop or click to upload. Files stay in your browser — nothing uploaded to any server.</p>
+        <button class="btn-primary" onclick="document.getElementById('fileInput').click()">⬆ Choose Files</button>
+        <input type="file" id="fileInput" multiple style="display:none" onchange="handleFiles(this.files)">
+        <div class="formats" style="margin-top:24px">
+          <span class="format-tag">PSD</span><span class="format-tag">PDF</span>
+          <span class="format-tag">DOCX</span><span class="format-tag">XLSX</span>
+          <span class="format-tag">PPTX</span><span class="format-tag">ZIP</span>
+          <span class="format-tag">PNG</span><span class="format-tag">JPG</span>
+          <span class="format-tag">GIF</span><span class="format-tag">SVG</span>
+          <span class="format-tag">MP4</span><span class="format-tag">WEBM</span>
+          <span class="format-tag">MP3</span><span class="format-tag">WAV</span>
+          <span class="format-tag">TXT</span><span class="format-tag">CSV</span>
+          <span class="format-tag">JSON</span><span class="format-tag">HTML</span>
+          <span class="format-tag">JS</span><span class="format-tag">PY</span>
+          <span class="format-tag">…and more</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toolbar (shown when a file is open) -->
+    <div class="toolbar" id="toolbar" style="display:none">
+      <span class="file-name" id="currentFileName">—<span class="ext-badge" id="currentFileExt"></span></span>
+      <button onclick="zoomOut()">−</button>
+      <button onclick="zoomReset()">⟲</button>
+      <button onclick="zoomIn()">+</button>
+      <button onclick="toggleMetadata()">📋 Info</button>
+      <button onclick="downloadCurrentFile()">⬇ Download</button>
+      <button onclick="closeFile()">✕ Close</button>
+    </div>
+
+    <!-- Viewer -->
+    <div class="viewer" id="viewer">
+      <div class="viewer-content" id="viewerContent"></div>
+    </div>
+
+    <!-- Zoom controls (floating, for images/pdf) -->
+    <div class="zoom-controls" id="zoomControls" style="display:none">
+      <button onclick="zoomOut()">−</button>
+      <span class="zoom-level" id="zoomLevel">100%</span>
+      <button onclick="zoomIn()">+</button>
+    </div>
+  </div>
+</div>
+
+<!-- Metadata panel -->
+<div class="metadata-panel" id="metadataPanel">
+  <h3>File Info <button onclick="toggleMetadata()">✕</button></h3>
+  <div id="metadataContent"></div>
+</div>
+
+<script>
+// ─── State ───
+let files = []; // {id, file, name, ext, size, type, url, thumbnail, metadata}
+let currentFile = null;
+let zoomLevel = 100;
+
+// ─── PDF.js worker ───
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ─── File type icons ───
+const FILE_ICONS = {
+  psd:'🎨',pdf:'📄',docx:'📝',doc:'📝',xlsx:'📊',xls:'📊',pptx:'📈',ppt:'📈',
+  zip:'📦',rar:'📦',txt:'📄',csv:'📊',json:'🔧',xml:'🔧',html:'🌐',htm:'🌐',
+  js:'🔧',ts:'🔧',py:'🔧',css:'🎨',scss:'🎨',less:'🎨',
+  png:'🖼',jpg:'🖼',jpeg:'🖼',gif:'🖼',svg:'🖼',webp:'🖼',bmp:'🖼',ico:'🖼',avif:'🖼',
+  mp4:'🎬',webm:'🎬',avi:'🎬',mov:'🎬',mkv:'🎬',
+  mp3:'🎵',wav:'🎵',ogg:'🎵',flac:'🎵',m4a:'🎵',aac:'🎵',
+  md:'📄',log:'📄',yml:'🔧',yaml:'🔧',sql:'🔧',sh:'🔧',java:'🔧',c:'🔧',cpp:'🔧',cs:'🔧',go:'🔧',rb:'🔧',php:'🔧',rs:'🔧',
+};
+
+const CODE_EXTS = new Set(['js','ts','jsx','tsx','py','java','c','cpp','cs','go','rb','php','rs','swift','kt','scala','sh','bash','sql','yaml','yml','xml','html','htm','css','scss','less','json','vue','svelte','dart','lua','r','pl','hs','clj','ex','exs','erl','elm']);
+const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','svg','webp','bmp','ico','avif']);
+const VIDEO_EXTS = new Set(['mp4','webm','avi','mov','mkv']);
+const AUDIO_EXTS = new Set(['mp3','wav','ogg','flac','m4a','aac']);
+
+// ─── Utility ───
+function getExt(name){return name.split('.').pop().toLowerCase();}
+function formatSize(bytes){
+  if(bytes<1024)return bytes+' B';
+  if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KB';
+  if(bytes<1024*1024*1024)return (bytes/1024/1024).toFixed(1)+' MB';
+  return (bytes/1024/1024/1024).toFixed(2)+' GB';
+}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).substr(2,5);}
+
+// ─── Drag & Drop ───
+const dropzone = document.getElementById('dropzone');
+['dragenter','dragover','dragleave','drop'].forEach(e=>{
+  dropzone.addEventListener(e,ev=>{ev.preventDefault();ev.stopPropagation();});
+});
+dropzone.addEventListener('dragenter',()=>dropzone.classList.add('dragover'));
+dropzone.addEventListener('dragover',()=>dropzone.classList.add('dragover'));
+dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop',e=>{
+  dropzone.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+
+// Also allow drop on the whole window
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>{e.preventDefault();if(e.target.closest('.dropzone'))return;handleFiles(e.dataTransfer.files);});
+
+// ─── Handle file input ───
+function handleFiles(fileList){
+  Array.from(fileList).forEach(file=>{
+    const ext = getExt(file.name);
+    const entry = {id:uid(),file,name:file.name,ext,size:file.size,type:file.type,url:null,thumbnail:null,metadata:{}};
+    if(IMAGE_EXTS.has(ext)) entry.url = URL.createObjectURL(file);
+    files.unshift(entry);
+    generateThumbnail(entry);
+    extractMetadata(entry);
+  });
+  renderFileList();
+  // Auto-open first new file
+  if(files.length>0) openFile(files[0].id);
+}
+
+// ─── Thumbnails ───
+function generateThumbnail(entry){
+  if(IMAGE_EXTS.has(entry.ext)){
+    entry.thumbnail = entry.url;
+  } else if(entry.ext==='pdf'){
+    // Generate PDF thumbnail from first page
+    const reader = new FileReader();
+    reader.onload = async()=>{
+      try{
+        const pdf = await pdfjsLib.getDocument({data:reader.result}).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({scale:0.3});
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;canvas.height = viewport.height;
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+        entry.thumbnail = canvas.toDataURL();
+        renderFileList();
+      }catch(e){}
+    };
+    reader.readAsArrayBuffer(entry.file);
+  } else if(VIDEO_EXTS.has(entry.ext)){
+    entry.url = URL.createObjectURL(entry.file);
+    const video = document.createElement('video');
+    video.src = entry.url;
+    video.onloadeddata=()=>{
+      const canvas = document.createElement('canvas');
+      canvas.width = 80;canvas.height = 60;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video,0,0,80,60);
+      entry.thumbnail = canvas.toDataURL();
+      renderFileList();
+    };
+  }
+}
+
+// ─── Metadata ───
+async function extractMetadata(entry){
+  const m = entry.metadata;
+  m.name = entry.name;
+  m.size = formatSize(entry.size);
+  m.type = entry.type || 'unknown';
+  m.ext = entry.ext;
+  m.lastModified = new Date(entry.file.lastModified).toLocaleString();
+
+  if(IMAGE_EXTS.has(entry.ext)){
+    const img = new Image();
+    img.onload=()=>{
+      m.width = img.naturalWidth+'px';
+      m.height = img.naturalHeight+'px';
+      renderFileList();
+      if(currentFile===entry.id) showMetadata(entry);
+    };
+    img.src = entry.url;
+  } else if(VIDEO_EXTS.has(entry.ext)){
+    entry.url = entry.url || URL.createObjectURL(entry.file);
+    const video = document.createElement('video');
+    video.onloadedmetadata=()=>{
+      m.duration = Math.round(video.duration)+'s';
+      m.width = video.videoWidth+'px';
+      m.height = video.videoHeight+'px';
+      renderFileList();
+      if(currentFile===entry.id) showMetadata(entry);
+    };
+    video.src = entry.url;
+  } else if(AUDIO_EXTS.has(entry.ext)){
+    const audio = new Audio(URL.createObjectURL(entry.file));
+    audio.onloadedmetadata=()=>{
+      m.duration = Math.round(audio.duration)+'s';
+      renderFileList();
+      if(currentFile===entry.id) showMetadata(entry);
+    };
+    audio.src = URL.createObjectURL(entry.file);
+  }
+}
+
+// ─── Render file list ───
+function renderFileList(){
+  const list = document.getElementById('fileList');
+  const query = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = files.filter(f=>f.name.toLowerCase().includes(query));
+  list.innerHTML = filtered.map(f=>`
+    <div class="file-item ${currentFile===f.id?'active':''}" onclick="openFile('${f.id}')" oncontextmenu="event.preventDefault();deleteFile('${f.id}')">
+      <div class="thumb">${f.thumbnail?`<img src="${f.thumbnail}" alt="">`:`<span>${FILE_ICONS[f.ext]||'📄'}</span>`}</div>
+      <div class="meta">
+        <div class="name">${f.name}</div>
+        <div class="info">${formatSize(f.size)}</div>
+      </div>
+      <button class="delete-btn" onclick="event.stopPropagation();deleteFile('${f.id}')">🗑</button>
+    </div>
+  `).join('');
+  document.getElementById('fileCount').textContent = `${files.length} file${files.length!==1?'s':''}`;
+  document.getElementById('totalSize').textContent = formatSize(files.reduce((s,f)=>s+f.size,0));
+}
+
+function filterFiles(){renderFileList();}
+
+function deleteFile(id){
+  files = files.filter(f=>f.id!==id);
+  if(currentFile===id) closeFile();
+  renderFileList();
+}
+
+// ─── Open file ───
+function openFile(id){
+  const entry = files.find(f=>f.id===id);
+  if(!entry)return;
+  currentFile = id;
+  zoomLevel = 100;
+
+  document.getElementById('dropzone').classList.add('has-file');
+  document.getElementById('toolbar').style.display = 'flex';
+  document.getElementById('viewer').classList.add('active');
+  document.getElementById('currentFileName').textContent = entry.name;
+  document.getElementById('currentFileExt').textContent = entry.ext.toUpperCase();
+
+  const content = document.getElementById('viewerContent');
+  content.innerHTML = '';
+
+  // Show/hide zoom controls based on type
+  const zoomable = IMAGE_EXTS.has(entry.ext) || entry.ext==='psd';
+  document.getElementById('zoomControls').style.display = zoomable?'flex':'none';
+
+  // Render based on extension
+  renderFile(entry, content);
+  renderFileList();
+  showMetadata(entry);
+}
+
+// ─── Render file by type ───
+async function renderFile(entry, container){
+  const ext = entry.ext;
+  try{
+    if(IMAGE_EXTS.has(ext)) renderImage(entry, container);
+    else if(ext==='pdf') await renderPDF(entry, container);
+    else if(ext==='docx') await renderDOCX(entry, container);
+    else if(ext==='xlsx'||ext==='xls') await renderXLSX(entry, container);
+    else if(ext==='pptx') await renderPPTX(entry, container);
+    else if(ext==='zip') await renderZIP(entry, container);
+    else if(ext==='psd') await renderPSD(entry, container);
+    else if(VIDEO_EXTS.has(ext)) renderVideo(entry, container);
+    else if(AUDIO_EXTS.has(ext)) renderAudio(entry, container);
+    else if(ext==='csv') await renderCSV(entry, container);
+    else if(ext==='md') renderMarkdown(entry, container);
+    else if(CODE_EXTS.has(ext)||ext==='txt'||ext==='log') await renderCode(entry, container, ext);
+    else renderUnsupported(entry, container);
+  }catch(err){
+    container.innerHTML = `<div class="viewer-empty">⚠ Error rendering file: ${err.message}</div>`;
+  }
+}
+
+// ─── Image ───
+function renderImage(entry, container){
+  const div = document.createElement('div');
+  div.className = 'img-viewer';
+  div.innerHTML = `<img id="zoomableImg" src="${entry.url}" alt="${entry.name}" style="transform:scale(${zoomLevel/100})">`;
+  container.appendChild(div);
+  updateZoomDisplay();
+}
+
+// ─── PDF ───
+async function renderPDF(entry, container){
+  const arrayBuffer = await entry.file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+  entry.metadata.pages = pdf.numPages;
+  const div = document.createElement('div');
+  div.className = 'pdf-viewer';
+  for(let i=1;i<=pdf.numPages;i++){
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({scale:1.5});
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({canvasContext:ctx,viewport}).promise;
+    div.appendChild(canvas);
+  }
+  container.appendChild(div);
+  showMetadata(entry);
+}
+
+// ─── DOCX ───
+async function renderDOCX(entry, container){
+  const arrayBuffer = await entry.file.arrayBuffer();
+  const result = await mammoth.convertToHtml({arrayBuffer});
+  const div = document.createElement('div');
+  div.className = 'docx-viewer';
+  div.innerHTML = result.value;
+  container.appendChild(div);
+  entry.metadata.wordCount = result.value.split(/\s+/).length+' words';
+  showMetadata(entry);
+}
+
+// ─── XLSX ───
+async function renderXLSX(entry, container){
+  const arrayBuffer = await entry.file.arrayBuffer();
+  const wb = XLSX.read(arrayBuffer,{type:'array'});
+  const div = document.createElement('div');
+  div.className = 'xlsx-viewer';
+
+  // Sheet tabs
+  const tabsDiv = document.createElement('div');
+  tabsDiv.className = 'sheet-tabs';
+  wb.SheetNames.forEach((name,i)=>{
+    const tab = document.createElement('div');
+    tab.className = 'sheet-tab'+(i===0?' active':'');
+    tab.textContent = name;
+    tab.onclick = ()=>{
+      document.querySelectorAll('.sheet-tab').forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      renderSheet(wb.Sheets[name], tableContainer);
+    };
+    tabsDiv.appendChild(tab);
+  });
+  div.appendChild(tabsDiv);
+
+  const tableContainer = document.createElement('div');
+  div.appendChild(tableContainer);
+  renderSheet(wb.Sheets[wb.SheetNames[0]], tableContainer);
+
+  entry.metadata.sheets = wb.SheetNames.length+' sheets';
+  entry.metadata.sheetNames = wb.SheetNames.join(', ');
+  container.appendChild(div);
+  showMetadata(entry);
+}
+function renderSheet(sheet, container){
+  const html = XLSX.utils.sheet_to_html(sheet);
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = `<table>${html}</table>`;
+  container.innerHTML = '';
+  container.appendChild(wrapper);
+}
+
+// ─── PPTX ───
+async function renderPPTX(entry, container){
+  // PPTX is a ZIP of XML files — parse slides
+  const arrayBuffer = await entry.file.arrayBuffer();
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const slideFiles = Object.keys(zip.files).filter(k=>k.match(/^ppt\/slides\/slide\d+\.xml$/)).sort((a,b)=>{
+    const na=parseInt(a.match(/slide(\d+)/)[1]),nb=parseInt(b.match(/slide(\d+)/)[1]);
+    return na-nb;
+  });
+  const div = document.createElement('div');
+  div.className = 'pptx-viewer';
+  for(const slidePath of slideFiles){
+    const slideXml = await zip.files[slidePath].async('string');
+    const slideDiv = document.createElement('div');
+    slideDiv.className = 'slide';
+    // Extract text content from XML
+    const texts = [...slideXml.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map(m=>m[1]);
+    slideDiv.innerHTML = `<div class="slide-placeholder"><div style="display:flex;flex-direction:column;gap:8px;align-items:center;">${texts.map(t=>`<div style="font-size:14px;color:#333;">${t}</div>`).join('')}</div></div>`;
+    div.appendChild(slideDiv);
+  }
+  entry.metadata.slides = slideFiles.length;
+  container.appendChild(div);
+  showMetadata(entry);
+}
+
+// ─── ZIP ───
+async function renderZIP(entry, container){
+  const arrayBuffer = await entry.file.arrayBuffer();
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const entries = Object.values(zip.files);
+  const div = document.createElement('div');
+  div.className = 'zip-viewer';
+  const tree = document.createElement('div');
+  tree.className = 'zip-tree';
+  entries.forEach(f=>{
+    const item = document.createElement('div');
+    item.className = 'zip-entry';
+    item.innerHTML = `<span class="zi">${f.dir?'📂':'📄'}</span><span>${f.name}</span>${!f.dir?`<span class="zs">${formatSize(f._data?._compressedSize||0)}</span>`:''}`;
+    tree.appendChild(item);
+  });
+  div.appendChild(tree);
+  entry.metadata.entries = entries.length+' items';
+  entry.metadata.fileCount = entries.filter(f=>!f.dir).length+' files';
+  container.appendChild(div);
+  showMetadata(entry);
+}
+
+// ─── PSD ───
+async function renderPSD(entry, container){
+  const arrayBuffer = await entry.file.arrayBuffer();
+  const psd = await PSD.parse(arrayBuffer);
+  const div = document.createElement('div');
+  div.className = 'psd-viewer';
+  const canvas = psd.toCanvas ? psd.toCanvas() : null;
+  if(canvas){
+    container.appendChild(canvas);
+  } else {
+    // Try rendering via the PSD object
+    const c = document.createElement('canvas');
+    if(psd.width&&psd.height){
+      c.width = psd.width;
+      c.height = psd.height;
+      const ctx = c.getContext('2d');
+      if(psd.imageData) ctx.putImageData(psd.imageData,0,0);
+      else ctx.fillStyle='#333';ctx.fillRect(0,0,c.width,c.height);
+    }
+    container.appendChild(c);
+  }
+  entry.metadata.psdWidth = psd.width+'px';
+  entry.metadata.psdHeight = psd.height+'px';
+  showMetadata(entry);
+}
+
+// ─── Video ───
+function renderVideo(entry, container){
+  entry.url = entry.url || URL.createObjectURL(entry.file);
+  const div = document.createElement('div');
+  div.className = 'video-viewer';
+  div.innerHTML = `<video controls src="${entry.url}" style="max-height:75vh"></video>`;
+  container.appendChild(div);
+}
+
+// ─── Audio ───
+function renderAudio(entry, container){
+  const url = URL.createObjectURL(entry.file);
+  const div = document.createElement('div');
+  div.className = 'audio-viewer';
+  div.innerHTML = `<div class="audio-icon">🎵</div><audio controls src="${url}"></audio>`;
+  container.appendChild(div);
+}
+
+// ─── CSV ───
+async function renderCSV(entry, container){
+  const text = await entry.file.text();
+  const lines = text.split('\n').filter(l=>l.trim());
+  const div = document.createElement('div');
+  div.className = 'csv-viewer';
+  let html = '<table>';
+  lines.forEach((line,i)=>{
+    const cols = parseCSVLine(line);
+    const tag = i===0?'th':'td';
+    html += '<tr>'+cols.map(c=>`<${tag}>${c}</${tag}>`).join('')+'</tr>';
+  });
+  html += '</table>';
+  div.innerHTML = html;
+  entry.metadata.rows = lines.length;
+  entry.metadata.cols = parseCSVLine(lines[0]).length;
+  container.appendChild(div);
+  showMetadata(entry);
+}
+function parseCSVLine(line){
+  const result = [];
+  let current = '', inQuotes = false;
+  for(let i=0;i<line.length;i++){
+    const ch = line[i];
+    if(ch==='"'){inQuotes=!inQuotes;}
+    else if(ch===','&&!inQuotes){result.push(current.trim());current='';}
+    else current += ch;
+  }
+  result.push(current.trim());
+  return result;
+}
+
+// ─── Markdown ───
+function renderMarkdown(entry, container){
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    const html = marked.parse(reader.result);
+    const div = document.createElement('div');
+    div.className = 'docx-viewer';
+    div.innerHTML = html;
+    container.appendChild(div);
+  };
+  reader.readAsText(entry.file);
+}
+
+// ─── Code / Text ───
+async function renderCode(entry, container, ext){
+  const text = await entry.file.text();
+  const div = document.createElement('div');
+  div.className = 'code-viewer';
+  const pre = document.createElement('pre');
+  const code = document.createElement('code');
+  // Map ext to hljs language
+  const langMap = {js:'javascript',ts:'typescript',jsx:'javascript',tsx:'typescript',py:'python',java:'java',c:'c',cpp:'cpp',cs:'csharp',go:'go',rb:'ruby',php:'php',rs:'rust',sh:'bash',bash:'bash',sql:'sql',yaml:'yaml',yml:'yaml',xml:'xml',html:'xml',htm:'xml',css:'css',scss:'scss',less:'less',json:'json',vue:'javascript',svelte:'javascript',md:'markdown'};
+  const lang = langMap[ext] || 'plaintext';
+  code.className = `language-${lang} hljs`;
+  code.textContent = text;
+  pre.appendChild(code);
+  div.appendChild(pre);
+  container.appendChild(div);
+  if(window.hljs) hljs.highlightElement(code);
+  entry.metadata.lines = text.split('\n').length;
+  entry.metadata.chars = text.length;
+  showMetadata(entry);
+}
+
+// ─── Unsupported ───
+function renderUnsupported(entry, container){
+  const div = document.createElement('div');
+  div.className = 'viewer-empty';
+  div.innerHTML = `<div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">${FILE_ICONS[entry.ext]||'📄'}</div><p>No preview available for .${entry.ext} files</p><p style="font-size:12px;margin-top:8px">You can still download the file.</p></div>`;
+  container.appendChild(div);
+}
+
+// ─── Zoom ───
+function zoomIn(){zoomLevel=Math.min(zoomLevel+25,500);applyZoom();}
+function zoomOut(){zoomLevel=Math.max(zoomLevel-25,25);applyZoom();}
+function zoomReset(){zoomLevel=100;applyZoom();}
+function applyZoom(){
+  const img = document.getElementById('zoomableImg');
+  if(img) img.style.transform = `scale(${zoomLevel/100})`;
+  updateZoomDisplay();
+}
+function updateZoomDisplay(){
+  document.getElementById('zoomLevel').textContent = zoomLevel+'%';
+}
+
+// ─── Metadata panel ───
+function toggleMetadata(){
+  document.getElementById('metadataPanel').classList.toggle('open');
+}
+function showMetadata(entry){
+  const m = entry.metadata;
+  let html = '';
+  const fields = [
+    ['Name',m.name||entry.name],
+    ['Type',m.type||entry.type||'—'],
+    ['Extension','.'+(m.ext||entry.ext)],
+    ['Size',m.size||formatSize(entry.size)],
+    ['Modified',m.lastModified||'—'],
+    ['Dimensions',m.width?`${m.width} × ${m.height}`:'—'],
+    ['Duration',m.duration||'—'],
+    ['Pages',m.pages||'—'],
+    ['Slides',m.slides||'—'],
+    ['Sheets',m.sheets||'—'],
+    ['Rows',m.rows||'—'],
+    ['Lines',m.lines||'—'],
+    ['Characters',m.chars||'—'],
+    ['Word Count',m.wordCount||'—'],
+    ['ZIP Items',m.entries||'—'],
+    ['File Count',m.fileCount||'—'],
+    ['PSD Size',m.psdWidth?`${m.psdWidth} × ${m.psdHeight}`:'—'],
+  ];
+  fields.forEach(([label,val])=>{
+    if(val && val!=='—') html += `<div class="field"><div class="label">${label}</div><div class="value">${val}</div></div>`;
+  });
+  document.getElementById('metadataContent').innerHTML = html;
+}
+
+// ─── Close file ───
+function closeFile(){
+  currentFile = null;
+  document.getElementById('dropzone').classList.remove('has-file');
+  document.getElementById('toolbar').style.display = 'none';
+  document.getElementById('viewer').classList.remove('active');
+  document.getElementById('viewerContent').innerHTML = '';
+  document.getElementById('zoomControls').style.display = 'none';
+  document.getElementById('metadataPanel').classList.remove('open');
+  renderFileList();
+}
+
+// ─── Download ───
+function downloadCurrentFile(){
+  if(!currentFile) return;
+  const entry = files.find(f=>f.id===currentFile);
+  if(!entry) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(entry.file);
+  a.download = entry.name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ─── Keyboard shortcuts ───
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') closeFile();
+  if(e.ctrlKey&&e.key==='f'){e.preventDefault();document.getElementById('searchInput').focus();}
+  if(currentFile){
+    if(e.key==='+'||e.key==='=') zoomIn();
+    if(e.key==='-') zoomOut();
+    if(e.key==='0') zoomReset();
+  }
+});
+
+// Init
+renderFileList();
+</script>
+</body>
+</html>
