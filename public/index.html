@@ -375,6 +375,7 @@ async function testBackendConnection(){
       statusEl.style.color='var(--green)';
       addLog('ok','Backend connected: '+API_URL);
       toast('Backend connected ✓','success');
+      await pushAllLocalProfilesToBackend(d.profiles);
     } else { throw new Error('Bad response'); }
   }catch(e){
     backendConnected = false;
@@ -415,6 +416,23 @@ async function syncProfileToBackend(profile){
       body:JSON.stringify(profile)
     });
   }catch(e){ console.error('Profile sync error:', e); }
+}
+
+// Push any local-only profiles to the backend on connect (fixes "Profile not found" for profiles created before backend was linked)
+async function pushAllLocalProfilesToBackend(backendProfileCount){
+  if(!backendConnected || !API_URL) return;
+  try{
+    const r = await fetch(API_URL+'/api/profiles');
+    const backendProfiles = await r.json();
+    const backendIds = new Set(backendProfiles.map(p=>p.id));
+    const missing = state.profiles.filter(p => !backendIds.has(p.id));
+    if(missing.length === 0) return;
+    for(const p of missing){
+      await syncProfileToBackend(p);
+    }
+    addLog('info', `Resynced ${missing.length} local profile(s) to backend`);
+    if(missing.length > 0) toast(`Synced ${missing.length} profile(s) to backend ✓`,'success');
+  }catch(e){ console.error('Auto-resync error:', e); }
 }
 
 async function syncScheduleToBackend(schedule){
@@ -481,7 +499,7 @@ setInterval(()=>{state.totpKeys.forEach(k=>{const code=generateTOTP(k.secret),re
 
 // PROFILES
 function openAddProfileModal(){['p-name','p-url','p-user','p-pass','p-cookies','p-ua','p-notes','p-totp'].forEach(id=>document.getElementById(id).value='');document.getElementById('p-platform').value='Google';renderProxyOptions();document.getElementById('modal-add-profile').classList.add('open');}
-function saveProfile(){const name=document.getElementById('p-name').value.trim(),url=document.getElementById('p-url').value.trim();if(!name||!url){toast('Name and URL required','error');return;}const totpSecret=document.getElementById('p-totp').value.trim();const p={id:Date.now().toString(),name,url,platform:document.getElementById('p-platform').value,username:document.getElementById('p-user').value.trim(),password:document.getElementById('p-pass').value,cookies:document.getElementById('p-cookies').value.trim(),userAgent:document.getElementById('p-ua').value.trim()||UA_LIST[Math.floor(Math.random()*UA_LIST.length)],totpSecret,proxy:document.getElementById('p-proxy').value,notes:document.getElementById('p-notes').value.trim(),fingerprint:randomFingerprint(),color:COLORS[Math.floor(Math.random()*COLORS.length)],status:'idle',lastLogin:null,loginCount:0};if(totpSecret)state.totpKeys.push({id:Date.now().toString()+Math.random(),label:name,secret:totpSecret,profileId:p.id});state.profiles.push(p);persist();closeModal("modal-add-profile");syncProfileToBackend(profile);renderProfiles();renderTOTPList();renderDashboard();addLog('info',`Profile "${name}" created`);toast(`Profile "${name}" added ✓`,'success');}
+function saveProfile(){const name=document.getElementById('p-name').value.trim(),url=document.getElementById('p-url').value.trim();if(!name||!url){toast('Name and URL required','error');return;}const totpSecret=document.getElementById('p-totp').value.trim();const p={id:Date.now().toString(),name,url,platform:document.getElementById('p-platform').value,username:document.getElementById('p-user').value.trim(),password:document.getElementById('p-pass').value,cookies:document.getElementById('p-cookies').value.trim(),userAgent:document.getElementById('p-ua').value.trim()||UA_LIST[Math.floor(Math.random()*UA_LIST.length)],totpSecret,proxy:document.getElementById('p-proxy').value,notes:document.getElementById('p-notes').value.trim(),fingerprint:randomFingerprint(),color:COLORS[Math.floor(Math.random()*COLORS.length)],status:'idle',lastLogin:null,loginCount:0};if(totpSecret)state.totpKeys.push({id:Date.now().toString()+Math.random(),label:name,secret:totpSecret,profileId:p.id});state.profiles.push(p);persist();closeModal("modal-add-profile");syncProfileToBackend(p);renderProfiles();renderTOTPList();renderDashboard();addLog('info',`Profile "${name}" created`);toast(`Profile "${name}" added ✓`,'success');}
 function deleteProfile(id){const p=state.profiles.find(x=>x.id===id);state.profiles=state.profiles.filter(x=>x.id!==id);persist();deleteProfileFromBackend(id);renderProfiles();renderDashboard();toast('Profile deleted','success');}
 function cloneProfile(id){const s=state.profiles.find(x=>x.id===id);if(!s)return;state.profiles.push({...s,id:Date.now().toString(),name:s.name+' (copy)',fingerprint:randomFingerprint(),status:'idle',lastLogin:null,loginCount:0});persist();renderProfiles();renderDashboard();toast('Cloned','success');}
 function launchProfile(id,silent=false){const p=state.profiles.find(x=>x.id===id);if(!p)return;p.status='launching';renderProfiles();const am=p.cookies&&p.cookies.length>10?'cookies':p.password?'password':'none';addLog('info',`Launching "${p.name}" [${am}${p.totpSecret?' +2FA':''}] → ${p.url}`);setTimeout(async()=>{let ok;if(backendConnected&&API_URL){try{const r=await fetch(API_URL+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profileId:p.id})});const d=await r.json();ok=d.success;}catch(e){ok=false;}}else{ok=am!=='none'?Math.random()>0.08:Math.random()>0.5;}p.status=ok?'active':'error';p.lastLogin=new Date().toLocaleString();if(ok){p.loginCount++;state.loginCount++;}persist();renderProfiles();renderDashboard();addLog(ok?'ok':'err',`"${p.name}" ${ok?'SUCCESS':'FAILED'}`);if(!silent)toast(`"${p.name}" ${ok?'launched ✓':'failed ✗'}`,ok?'success':'error');},1200+Math.random()*800);}
