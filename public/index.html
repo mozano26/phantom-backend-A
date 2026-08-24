@@ -256,6 +256,7 @@
 <!-- ADD PROFILE MODAL -->
 <div class="modal-overlay" id="modal-add-profile"><div class="modal"><div class="modal-title">👤 Add Profile</div>
   <div class="form-group"><label class="form-label">Profile Name</label><input type="text" class="form-input" id="p-name" placeholder="Ad Account #1"></div>
+  <div class="form-group"><label class="form-label">Quick Select Service</label><select class="form-select" id="p-preset" onchange="applyServicePreset()"><option value="">-- Choose a service (auto-fills URL) --</option></select></div>
   <div class="form-group"><label class="form-label">Target URL</label><input type="text" class="form-input" id="p-url" placeholder="https://ads.google.com"></div>
   <div class="form-group"><label class="form-label">Platform</label><select class="form-select" id="p-platform"><option>Google</option><option>Facebook</option><option>TikTok</option><option>Amazon</option><option>Twitter/X</option><option>LinkedIn</option><option>Custom</option></select></div>
   <div class="section-divider">🔑 Credentials</div>
@@ -456,6 +457,21 @@ let state = {
 };
 const COLORS=['#7c3aed','#2563eb','#16a34a','#dc2626','#d97706','#0891b2','#be185d','#0d9488'];
 const UA_LIST=['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36','Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15','Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0','Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0','Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'];
+const SERVICE_PRESETS = {
+  "Gmail / Google": { url: "https://accounts.google.com/signin", platform: "Google" },
+  "Yahoo Mail": { url: "https://login.yahoo.com/", platform: "Custom" },
+  "Facebook": { url: "https://www.facebook.com/login.php", platform: "Facebook" },
+  "Instagram": { url: "https://www.instagram.com/accounts/login/", platform: "Custom" },
+  "Twitter / X": { url: "https://twitter.com/i/flow/login", platform: "Twitter/X" },
+  "LinkedIn": { url: "https://www.linkedin.com/login", platform: "LinkedIn" },
+  "TikTok": { url: "https://www.tiktok.com/login", platform: "TikTok" },
+  "Amazon": { url: "https://www.amazon.com/ap/signin", platform: "Amazon" },
+  "Reddit": { url: "https://www.reddit.com/login/", platform: "Custom" },
+  "Google Ads": { url: "https://ads.google.com", platform: "Google" },
+  "Bank of Ireland": { url: "https://www.365online.com/", platform: "Custom" },
+  "Custom / Other": { url: "", platform: "Custom" },
+};
+
 
 // TOTP ENGINE
 function base32Decode(b32){const a='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits=0,val=0,out=[];b32=b32.toUpperCase().replace(/=+$/,'').replace(/\s/g,'');for(let i=0;i<b32.length;i++){const idx=a.indexOf(b32[i]);if(idx===-1)continue;val=(val<<5)|idx;bits+=5;if(bits>=8){bits-=8;out.push((val>>bits)&0xff);}}return out;}
@@ -498,7 +514,20 @@ function copyTOTP(id){const c=document.getElementById('totp-code-'+id)?.textCont
 setInterval(()=>{state.totpKeys.forEach(k=>{const code=generateTOTP(k.secret),rem=totpSecondsRemaining();const ce=document.getElementById('totp-code-'+k.id),te=document.getElementById('totp-timer-'+k.id),be=document.getElementById('totp-bar-'+k.id);if(ce)ce.textContent=code.slice(0,3)+' '+code.slice(3);if(te)te.textContent=rem+'s';if(be)be.style.width=((rem/30)*100)+'%';});},1000);
 
 // PROFILES
-function openAddProfileModal(){['p-name','p-url','p-user','p-pass','p-cookies','p-ua','p-notes','p-totp'].forEach(id=>document.getElementById(id).value='');document.getElementById('p-platform').value='Google';renderProxyOptions();document.getElementById('modal-add-profile').classList.add('open');}
+function openAddProfileModal(){['p-name','p-url','p-user','p-pass','p-cookies','p-ua','p-notes','p-totp'].forEach(id=>document.getElementById(id).value='');document.getElementById('p-platform').value='Google';document.getElementById('p-preset').innerHTML='<option value="">-- Choose a service (auto-fills URL) --</option>'+Object.keys(SERVICE_PRESETS).map(k=>`<option value="${k}">${k}</option>`).join('');renderProxyOptions();document.getElementById('modal-add-profile').classList.add('open');}
+
+function applyServicePreset(){
+  const key = document.getElementById('p-preset').value;
+  if(!key || !SERVICE_PRESETS[key]) return;
+  const preset = SERVICE_PRESETS[key];
+  document.getElementById('p-url').value = preset.url;
+  if(preset.platform && [...document.getElementById('p-platform').options].some(o=>o.value===preset.platform)){
+    document.getElementById('p-platform').value = preset.platform;
+  }
+  if(!document.getElementById('p-name').value.trim() && key !== 'Custom / Other'){
+    document.getElementById('p-name').value = key;
+  }
+}
 function saveProfile(){const name=document.getElementById('p-name').value.trim(),url=document.getElementById('p-url').value.trim();if(!name||!url){toast('Name and URL required','error');return;}const totpSecret=document.getElementById('p-totp').value.trim();const p={id:Date.now().toString(),name,url,platform:document.getElementById('p-platform').value,username:document.getElementById('p-user').value.trim(),password:document.getElementById('p-pass').value,cookies:document.getElementById('p-cookies').value.trim(),userAgent:document.getElementById('p-ua').value.trim()||UA_LIST[Math.floor(Math.random()*UA_LIST.length)],totpSecret,proxy:document.getElementById('p-proxy').value,notes:document.getElementById('p-notes').value.trim(),fingerprint:randomFingerprint(),color:COLORS[Math.floor(Math.random()*COLORS.length)],status:'idle',lastLogin:null,loginCount:0};if(totpSecret)state.totpKeys.push({id:Date.now().toString()+Math.random(),label:name,secret:totpSecret,profileId:p.id});state.profiles.push(p);persist();closeModal("modal-add-profile");syncProfileToBackend(p);renderProfiles();renderTOTPList();renderDashboard();addLog('info',`Profile "${name}" created`);toast(`Profile "${name}" added ✓`,'success');}
 function deleteProfile(id){const p=state.profiles.find(x=>x.id===id);state.profiles=state.profiles.filter(x=>x.id!==id);persist();deleteProfileFromBackend(id);renderProfiles();renderDashboard();toast('Profile deleted','success');}
 function cloneProfile(id){const s=state.profiles.find(x=>x.id===id);if(!s)return;state.profiles.push({...s,id:Date.now().toString(),name:s.name+' (copy)',fingerprint:randomFingerprint(),status:'idle',lastLogin:null,loginCount:0});persist();renderProfiles();renderDashboard();toast('Cloned','success');}
