@@ -266,6 +266,7 @@
   <div class="section-divider">🔐 2FA</div>
   <div class="form-group"><label class="form-label">TOTP Secret <span class="form-label-hint">(optional)</span></label><input type="text" class="form-input" id="p-totp" placeholder="JBSWY3DPEHPK3PXP" style="font-family:monospace;"></div>
   <div class="section-divider">⚙️ Advanced</div>
+  <div class="form-group"><label class="form-label">User-Agent Preset</label><select class="form-select" id="p-ua-preset" onchange="applyUAPreset()"><option value="">-- Auto (Random) --</option></select></div>
   <div class="form-group"><label class="form-label">User-Agent <span class="form-label-hint">(blank = auto)</span></label><input type="text" class="form-input" id="p-ua" placeholder="Mozilla/5.0 ..."></div>
   <div class="form-group"><label class="form-label">Proxy</label><select class="form-select" id="p-proxy"><option value="">None</option></select></div>
   <div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="p-notes" style="min-height:55px;"></textarea></div>
@@ -457,6 +458,20 @@ let state = {
 };
 const COLORS=['#7c3aed','#2563eb','#16a34a','#dc2626','#d97706','#0891b2','#be185d','#0d9488'];
 const UA_LIST=['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36','Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15','Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0','Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0','Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'];
+const UA_PRESETS = {
+  "Windows — Chrome (Latest)": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Windows — Firefox (Latest)": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+  "Windows — Edge (Latest)": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+  "Mac — Chrome (Latest)": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mac — Safari (Latest)": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+  "Mac — Firefox (Latest)": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+  "Linux — Chrome (Latest)": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Linux — Firefox (Latest)": "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
+  "Android — Chrome Mobile": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+  "iPhone — Safari Mobile": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+  "iPad — Safari": "Mozilla/5.0 (iPad; CPU OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+  "Auto (Random)": "",
+};
 const SERVICE_PRESETS = {
   "Gmail / Google": { url: "https://accounts.google.com/signin", platform: "Google" },
   "Yahoo Mail": { url: "https://login.yahoo.com/", platform: "Custom" },
@@ -514,7 +529,9 @@ function copyTOTP(id){const c=document.getElementById('totp-code-'+id)?.textCont
 setInterval(()=>{state.totpKeys.forEach(k=>{const code=generateTOTP(k.secret),rem=totpSecondsRemaining();const ce=document.getElementById('totp-code-'+k.id),te=document.getElementById('totp-timer-'+k.id),be=document.getElementById('totp-bar-'+k.id);if(ce)ce.textContent=code.slice(0,3)+' '+code.slice(3);if(te)te.textContent=rem+'s';if(be)be.style.width=((rem/30)*100)+'%';});},1000);
 
 // PROFILES
-function openAddProfileModal(){['p-name','p-url','p-user','p-pass','p-cookies','p-ua','p-notes','p-totp'].forEach(id=>document.getElementById(id).value='');document.getElementById('p-platform').value='Google';document.getElementById('p-preset').innerHTML='<option value="">-- Choose a service (auto-fills URL) --</option>'+Object.keys(SERVICE_PRESETS).map(k=>`<option value="${k}">${k}</option>`).join('');renderProxyOptions();document.getElementById('modal-add-profile').classList.add('open');}
+function openAddProfileModal(){['p-name','p-url','p-user','p-pass','p-cookies','p-ua','p-notes','p-totp'].forEach(id=>document.getElementById(id).value='');document.getElementById('p-platform').value='Google';document.getElementById('p-preset').innerHTML='<option value="">-- Choose a service (auto-fills URL) --</option>'+Object.keys(SERVICE_PRESETS).map(k=>`<option value="${k}">${k}</option>`).join('');document.getElementById('p-ua-preset').innerHTML='<option value="">-- Auto (Random) --</option>'+Object.keys(UA_PRESETS).map(k=>`<option value="${k}">${k}</option>`).join('');renderProxyOptions();document.getElementById('modal-add-profile').classList.add('open');}
+
+function applyUAPreset(){const key=document.getElementById('p-ua-preset').value;if(!key)return;const ua=UA_PRESETS[key];document.getElementById('p-ua').value=ua;}
 
 function applyServicePreset(){
   const key = document.getElementById('p-preset').value;

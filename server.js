@@ -271,7 +271,7 @@ async function launchProfileLogin(profileId) {
   });
 
   // Navigate to target URL
-  await page.goto(profile.url, { waitUntil: 'commit', timeout: 15000 });
+  await page.goto(profile.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
 
   let loginSuccess = false;
 
@@ -288,27 +288,36 @@ async function launchProfileLogin(profileId) {
   if (!loginSuccess && profile.username && profile.password) {
     logEvent('info', `Profile "${profile.name}" — attempting password login...`);
     try {
-      // Try common username field selectors
+      // Wait for the page to actually load form elements
       const userSelectors = ['input[type="email"]', 'input[name="email"]', 'input[name="username"]', 'input[name="user"]', 'input[autocomplete="username"]', '#username', '#email'];
       const passSelectors = ['input[type="password"]', 'input[name="password"]', '#password'];
 
+      // Wait up to 10 seconds for any username field to appear
       let userFilled = false;
       for (const sel of userSelectors) {
-        const el = page.locator(sel).first();
-        if (await el.count() > 0) {
+        try {
+          await page.waitForSelector(sel, { timeout: 3000 });
+          const el = page.locator(sel).first();
           await el.fill(profile.username);
           userFilled = true;
+          logEvent('info', `Profile "${profile.name}" — found username field: ${sel}`);
           break;
-        }
+        } catch { /* try next selector */ }
+      }
+
+      if (!userFilled) {
+        logEvent('err', `Profile "${profile.name}" — could not find any username field on page`);
       }
 
       if (userFilled) {
         for (const sel of passSelectors) {
-          const el = page.locator(sel).first();
-          if (await el.count() > 0) {
+          try {
+            await page.waitForSelector(sel, { timeout: 3000 });
+            const el = page.locator(sel).first();
             await el.fill(profile.password);
+            logEvent('info', `Profile "${profile.name}" — found password field: ${sel}`);
             break;
-          }
+          } catch { /* try next selector */ }
         }
 
         // Submit
@@ -340,6 +349,7 @@ async function launchProfileLogin(profileId) {
       }
     } catch (e) {
       logEvent('err', `Profile "${profile.name}" — login error: ${e.message}`);
+      console.error('Full login error:', e.stack || e);
     }
   }
 
