@@ -227,9 +227,9 @@ async function launchProfileLogin(profileId) {
       '--disable-popup-blocking',
       '--metrics-recording-only',
       '--disable-component-extensions-with-background-pages',
-      '--single-process',
-      '--no-zygote',
       '--memory-pressure-off',
+      '--disable-web-security',
+      '--disable-features=IsolateOrigins,site-per-process',
       '--disable-features=TranslateUI',
       '--disable-features=site-per-process',
       '--js-flags=--max-old-space-size=256',
@@ -268,18 +268,15 @@ async function launchProfileLogin(profileId) {
   // Block unnecessary resources for faster page loads
   await page.route('**/*', (route) => {
     const type = route.request().resourceType();
-    const url = route.request().url();
-    if (type === 'image' || type === 'media' || type === 'font' || type === 'stylesheet') {
-      route.abort();
-    } else if (type === 'script' && /taboola|doubleclick|adnxs|yieldmo|seedtag|pubmatic|rubicon|criteo|indexww|openx|moatads|quantserve|scorecardresearch|chartbeat|comscore|bttrack/.test(url)) {
-      route.abort();
-    } else {
+    if (type === 'document') {
       route.continue();
+    } else {
+      route.abort();
     }
   });
 
   // Navigate to target URL
-  await page.goto(profile.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await page.goto(profile.url, { waitUntil: 'commit', timeout: 15000 });
 
   let loginSuccess = false;
 
