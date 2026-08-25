@@ -874,8 +874,23 @@ document.addEventListener('keydown',e=>{
   }
 });
 
+// ─── Auto-load from URL parameter (?url=...&name=...) ───
+async function autoLoadFromUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const url = params.get('url');
+  if(!url) return;
+  const name = params.get('name') || url.split('/').pop() || 'file';
+  try{
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    const file = new File([blob], name, {type: blob.type});
+    handleFiles([file]);
+  }catch(e){ console.log('Auto-load failed:', e.message); }
+}
+
 // Init
 renderFileList();
+autoLoadFromUrl();
 </script>
 </body>
 </html>

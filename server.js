@@ -217,7 +217,6 @@ async function launchProfileLogin(profileId) {
       '--disable-gpu',
       '--disable-dev-shm-usage',
       '--disable-extensions',
-      '--disable-images',
       '--disable-plugins',
       '--disable-notifications',
       '--no-first-run',
@@ -228,6 +227,12 @@ async function launchProfileLogin(profileId) {
       '--disable-popup-blocking',
       '--metrics-recording-only',
       '--disable-component-extensions-with-background-pages',
+      '--single-process',
+      '--no-zygote',
+      '--memory-pressure-off',
+      '--disable-features=TranslateUI',
+      '--disable-features=site-per-process',
+      '--js-flags=--max-old-space-size=256',
     ],
   };
   if (proxyConfig) launchOptions.proxy = proxyConfig;
@@ -263,7 +268,10 @@ async function launchProfileLogin(profileId) {
   // Block unnecessary resources for faster page loads
   await page.route('**/*', (route) => {
     const type = route.request().resourceType();
-    if (type === 'image' || type === 'media' || type === 'font') {
+    const url = route.request().url();
+    if (type === 'image' || type === 'media' || type === 'font' || type === 'stylesheet') {
+      route.abort();
+    } else if (type === 'script' && /taboola|doubleclick|adnxs|yieldmo|seedtag|pubmatic|rubicon|criteo|indexww|openx|moatads|quantserve|scorecardresearch|chartbeat|comscore|bttrack/.test(url)) {
       route.abort();
     } else {
       route.continue();
